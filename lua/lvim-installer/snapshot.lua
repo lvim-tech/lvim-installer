@@ -54,6 +54,34 @@ local function offer_restore(name)
 	})
 end
 
+--- Capture the current state into a snapshot file. Prompts for a name when none given.
+---@param name? string
+---@return nil
+function M.save(name)
+	local function do_save(n)
+		n = n and vim.trim(n) or ""
+		if n == "" then
+			return
+		end
+		vim.notify("Snapshot: saving current state as '" .. n .. "'…", vim.log.levels.INFO)
+		local ok, err = pkg.snapshot_save(n)
+		if ok then
+			vim.notify("Snapshot: saved '" .. n .. "'.", vim.log.levels.INFO)
+		else
+			vim.notify("Snapshot: save failed — " .. tostring(err), vim.log.levels.ERROR)
+		end
+	end
+	if name and name ~= "" then
+		do_save(name)
+	else
+		vim.ui.input({ prompt = "Save current state as snapshot: " }, function(input)
+			if input then
+				do_save(input)
+			end
+		end)
+	end
+end
+
 --- Switch the active snapshot to `name` and offer to restore the differences.
 --- Shared by the :LvimInstaller snapshot picker and the browser Snapshots tab.
 ---@param name string
@@ -83,7 +111,8 @@ function M.open()
 		return
 	end
 	local active = pkg.active_snapshot()
-	local items = {}
+	local SAVE = "󰆓 Save current state…"
+	local items = { SAVE }
 	for _, name in ipairs(snaps) do
 		items[#items + 1] = (name == active and "● " or "○ ") .. name
 	end
@@ -94,7 +123,11 @@ function M.open()
 			if not confirmed or not idx then
 				return
 			end
-			M.apply(snaps[idx])
+			if idx == 1 then
+				M.save()
+			else
+				M.apply(snaps[idx - 1])
+			end
 		end,
 	})
 end

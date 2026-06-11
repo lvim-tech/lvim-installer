@@ -1610,7 +1610,20 @@ end
 local function snapshot_rows(tab)
 	local snaps = pkg.snapshots()
 	local active = pkg.active_snapshot()
-	local rows = { { type = "spacer", name = "sec_snapshots", label = "Active: " .. active } }
+	local rows = {
+		{
+			type = "action",
+			name = "snap_save",
+			label = "󰆓 Save current state…",
+			run = function(_, close)
+				if close then
+					close()
+				end
+				require("lvim-installer.snapshot").save()
+			end,
+		},
+		{ type = "spacer", name = "sec_snapshots", label = "Active: " .. active },
+	}
 	if #snaps == 0 then
 		rows[#rows + 1] = { type = "spacer", name = "empty", label = "(no snapshot files found)" }
 		return rows

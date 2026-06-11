@@ -57,7 +57,11 @@ function M.setup(opts)
 			return
 		end
 		if args[1] == "snapshot" then
-			require("lvim-installer.snapshot").open()
+			if args[2] == "save" then
+				require("lvim-installer.snapshot").save(args[3])
+			else
+				require("lvim-installer.snapshot").open()
+			end
 			return
 		end
 		local map = {
@@ -80,6 +84,9 @@ function M.setup(opts)
 			end
 			if words[2] == "update-registry" then
 				return starts({ "mason", "ts", "all" })
+			end
+			if words[2] == "snapshot" then
+				return starts({ "save" })
 			end
 			return starts({ "lsp", "dap", "linter", "formatter", "parsers", "plugins", "snapshot", "update-registry" })
 		end,
