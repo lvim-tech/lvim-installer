@@ -115,8 +115,8 @@ local function build_lines(missing, status, done_count, total, fi, width, build)
 			status_row(lines, marks, spin, missing[i], status[missing[i]])
 		end
 	else
-		-- Build phase: the clone summary stays above; show per-library build progress.
-		lines[#lines + 1] = ""
+		-- Build phase: the clone summary stays above; the build header follows directly
+		-- (no blank separator row, which read as a stray empty line under the bar).
 		local bdone = build.done >= build.total
 		local bhead = bdone and string.format("  \xe2\x9c\x93 Built %d native libraries", build.total)
 			or string.format("  %s Building native libraries   %d / %d", spin, build.done, build.total)
