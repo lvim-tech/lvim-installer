@@ -99,14 +99,18 @@ end
 
 -- Plugin row text: name in a fixed column, then load time and/or update marker.
 ---@param info table
+---@param pin table|nil  the stored convention { version, reftype, branch }, or nil
 ---@return string
-local function plugin_label(info)
+local function plugin_label(info, pin)
 	local parts = {}
 	if info.loaded and info.time_ms then
 		parts[#parts + 1] = string.format("%.2f ms", info.time_ms)
 	end
 	if info.dependency then
 		parts[#parts + 1] = "dep"
+	end
+	if pin then
+		parts[#parts + 1] = "󰐃 pinned"
 	end
 	if info.outdated then
 		parts[#parts + 1] = "update"
@@ -911,7 +915,7 @@ local function plugin_item_row(tab, item, w)
 		end,
 	}
 	local sicon, status_hl = plugin_style(info)
-	local label = plugin_label(info)
+	local label = plugin_label(info, item.pin)
 	return {
 		type = "action",
 		name = "p_" .. item.name,
