@@ -101,11 +101,11 @@ end
 ---@return string
 local function plugin_label(info)
 	local parts = {}
-	if info.dependency then
-		parts[#parts + 1] = "dep"
-	end
 	if info.loaded and info.time_ms then
 		parts[#parts + 1] = string.format("%.2f ms", info.time_ms)
+	end
+	if info.dependency then
+		parts[#parts + 1] = "dep"
 	end
 	if info.outdated then
 		parts[#parts + 1] = "update"
