@@ -357,12 +357,21 @@ local function reinstall_menu(name, info)
 		local cur_tag = (rt == "tag") and val or nil
 		local cur_conv = (rt == "tag") and ctx or nil
 
+		-- Tracking the default branch's tip == "follow latest", so it clears the pin
+		-- rather than recording one. Any other choice (tag, commit, non-default branch)
+		-- is an explicit pin.
+		local default_branch = pkg.plugin_default_branch(name)
+
 		local function finish(ref, conv)
 			local err = pkg.plugin_checkout(name, ref)
 			if err then
 				vim.notify("Checkout failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
 			else
-				pkg.pin("plugin", name, conv.version, conv.reftype, conv.branch)
+				if conv.reftype == "branch" and conv.branch == default_branch then
+					pkg.unpin("plugin", name)
+				else
+					pkg.pin("plugin", name, conv.version, conv.reftype, conv.branch)
+				end
 				vim.notify(name .. " \xe2\x86\x92 " .. ref)
 			end
 			M.refresh_open()
