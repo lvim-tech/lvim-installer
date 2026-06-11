@@ -61,7 +61,14 @@ local function build_items(tab)
 			installed[lang] = true
 		end
 		for _, lang in ipairs(pkg.available("parser")) do
-			items[#items + 1] = { name = lang, kind = "parser", desc = "", installed = installed[lang] }
+			items[#items + 1] = {
+				name = lang,
+				kind = "parser",
+				desc = "",
+				installed = installed[lang],
+				version = installed[lang] and pkg.parser_installed_version(lang) or nil,
+				outdated = installed[lang] and pkg.parser_outdated(lang) or false,
+			}
 		end
 	elseif tab.kind == "plugin" then
 		-- Rich, lazy.nvim-style data straight from lvim-pkg (load time, reason,
@@ -1462,9 +1469,12 @@ local function parser_item_row(tab, item, w)
 	local children = {}
 	local ppath = pkg_paths.ts() .. "/parser/" .. item.name .. ".so"
 	local fields = {
-		{ "Status", item.installed and "installed" or "not installed" },
-		{ "Path", ppath },
+		{ "Status", item.installed and (item.outdated and "outdated" or "up to date") or "not installed" },
 	}
+	if item.version and item.version ~= "" then
+		fields[#fields + 1] = { "Version", item.version:sub(1, 12) }
+	end
+	fields[#fields + 1] = { "Path", ppath }
 	local popup_w = math.max(40, math.floor(vim.o.columns * 0.9) - 4)
 	local maxv = math.max(24, popup_w - (12 + w))
 	for i, fv in ipairs(fields) do
@@ -1513,14 +1523,16 @@ local function parser_item_row(tab, item, w)
 		end,
 	}
 	local sicon = item.installed and "\xe2\x97\x8f" or "\xe2\x97\x8b" -- ● / ○
-	local status_hl = item.installed and "LvimInstallerStatusLoaded" or "LvimInstallerStatusLazy"
+	local status_hl = (not item.installed and "LvimInstallerStatusLazy")
+		or (item.outdated and "LvimInstallerStatusOutdated")
+		or "LvimInstallerStatusLoaded"
 	return {
 		type = "action",
 		name = "ti_" .. item.name,
 		icon = "  " .. sicon .. " " .. string.format("%-" .. (w + 4) .. "s", item.name),
 		icon_hl = status_hl,
-		text_hl = "LvimInstallerParentValue",
-		label = "",
+		text_hl = item.outdated and "LvimInstallerUpdateMark" or "LvimInstallerParentValue",
+		label = item.outdated and "update" or "",
 		children = children,
 		expanded = state.expanded["ti_" .. item.name] == true,
 	}
@@ -1532,6 +1544,45 @@ end
 ---@return table[]
 local function parser_rows(tab)
 	local rows = {
+		{
+			type = "segmented",
+			name = "ts_update_bar",
+			center = true,
+			label = "",
+			options = { "Check for updates", "Update outdated" },
+			value = "Check for updates",
+			text_hl = "LvimInstallerToolbar",
+			active_hl = "LvimInstallerActive",
+			run = function(value, _close, activated)
+				if not activated then
+					return
+				end
+				if value == "Update outdated" then
+					local names = {}
+					for _, it in ipairs(build_items(tab)) do
+						if it.outdated then
+							names[#names + 1] = it.name
+						end
+					end
+					if #names == 0 then
+						vim.notify("lvim-installer: no parser updates")
+						return
+					end
+					vim.notify(("lvim-installer: updating %d parser(s)\xe2\x80\xa6"):format(#names))
+					pkg.update("parser", names, function()
+						vim.notify(("lvim-installer: updated %d parser(s)"):format(#names))
+						M.refresh_open()
+					end)
+				else
+					vim.notify("lvim-installer: checking parsers for updates…")
+					pkg.check_parsers_outdated(function(found)
+						vim.notify(string.format("lvim-installer: %d parser(s) have updates", #found))
+						M.refresh_open()
+					end)
+				end
+			end,
+		},
+		{ type = "spacer", name = "ts_tb_gap", label = "" },
 		{
 			type = "segmented",
 			name = "filter",
@@ -1565,8 +1616,8 @@ local function parser_rows(tab)
 		local pass = (mode == "All")
 			or (mode == "Installed" and item.installed)
 			or (mode == "Available" and not item.installed)
-			or (mode == "Outdated" and mason_outdated(item))
-			or (mode == "Up-to-date" and item.installed and not mason_outdated(item))
+			or (mode == "Outdated" and item.outdated)
+			or (mode == "Up-to-date" and item.installed and not item.outdated)
 			or (mode == "Search" and (fl == "" or item.name:lower():find(fl, 1, true) ~= nil))
 		if pass then
 			table.insert(item.installed and installed or available, item)
