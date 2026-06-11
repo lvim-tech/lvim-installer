@@ -224,7 +224,8 @@ local function run_notify(specs, missing, nm, opts)
 
 	-- Build phase: synchronously run each freshly-installed plugin's build hook (the
 	-- authors' convention — e.g. blink.cmp's :pwait()) while the panel shows per-library
-	-- "building … ✓ / ✗". The build blocks, so we render + redraw around each one.
+	-- "building … ✓ / ✗". A spinner timer keeps the panel animating during a build that
+	-- pumps the event loop (pwait); render + redraw also bracket each build.
 	local build_names = {}
 	for _, n in ipairs(missing) do
 		if has_build[n] then
@@ -241,7 +242,17 @@ local function run_notify(specs, missing, nm, opts)
 			nm.progress_update("lvim-bootstrap", lines, marks)
 			pcall(vim.cmd, "redraw")
 		end
-		brender()
+		local btimer = vim.uv.new_timer()
+		if btimer then
+			btimer:start(
+				80,
+				80,
+				vim.schedule_wrap(function()
+					fi = fi % #FRAMES + 1
+					brender()
+				end)
+			)
+		end
 		for _, n in ipairs(build_names) do
 			b.status[n] = "building"
 			brender()
@@ -249,6 +260,10 @@ local function run_notify(specs, missing, nm, opts)
 			b.status[n] = (pok and rok ~= false) and "done" or "error"
 			b.done = b.done + 1
 			brender()
+		end
+		if btimer then
+			btimer:stop()
+			btimer:close()
 		end
 	end
 
