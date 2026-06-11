@@ -1,0 +1,9 @@
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+tags
+# Lua
+luac.out
+*.luac
