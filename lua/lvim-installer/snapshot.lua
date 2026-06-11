@@ -7,6 +7,7 @@
 ---@module "lvim-installer.snapshot"
 
 local pkg = require("lvim-pkg")
+local ui_mod = require("lvim-installer.ui")
 
 local M = {}
 
@@ -19,29 +20,38 @@ local function offer_restore(name)
 		vim.notify("Snapshot: switched to '" .. name .. "' — nothing to restore.", vim.log.levels.INFO)
 		return
 	end
+	local ui = ui_mod.get()
+	if not ui then
+		vim.notify("lvim-installer: lvim-utils UI unavailable", vim.log.levels.ERROR)
+		return
+	end
 	local restore = string.format("Restore now  (%d plugins, %d mason)", np, nm)
 	local later = "Switch only — apply on restart"
-	vim.ui.select({ restore, later, "Cancel" }, {
-		prompt = "Restore differences for '" .. name .. "'?",
-	}, function(choice)
-		if not choice or choice == "Cancel" then
-			return
-		end
-		if choice == later then
-			vim.notify("Snapshot: switched to '" .. name .. "'. Restart Neovim to apply.", vim.log.levels.INFO)
-			return
-		end
-		vim.notify("Snapshot: restoring '" .. name .. "'…", vim.log.levels.INFO)
-		pkg.snapshot_restore(diff, function()
-			local msg = "Snapshot: restored '" .. name .. "'."
-			if np > 0 then
-				msg = msg .. " Restart Neovim to load the new plugin versions."
+	local items = { restore, later }
+	ui.select({
+		title = "Restore '" .. name .. "'?",
+		items = items,
+		callback = function(confirmed, idx)
+			local choice = idx and items[idx]
+			if not confirmed or not choice then
+				return
 			end
-			vim.schedule(function()
-				vim.notify(msg, vim.log.levels.INFO)
+			if choice == later then
+				vim.notify("Snapshot: switched to '" .. name .. "'. Restart Neovim to apply.", vim.log.levels.INFO)
+				return
+			end
+			vim.notify("Snapshot: restoring '" .. name .. "'…", vim.log.levels.INFO)
+			pkg.snapshot_restore(diff, function()
+				local msg = "Snapshot: restored '" .. name .. "'."
+				if np > 0 then
+					msg = msg .. " Restart Neovim to load the new plugin versions."
+				end
+				vim.schedule(function()
+					vim.notify(msg, vim.log.levels.INFO)
+				end)
 			end)
-		end)
-	end)
+		end,
+	})
 end
 
 --- Switch the active snapshot to `name` and offer to restore the differences.
@@ -67,17 +77,26 @@ function M.open()
 		vim.notify("No snapshots found in the snapshots directory.", vim.log.levels.WARN)
 		return
 	end
+	local ui = ui_mod.get()
+	if not ui then
+		vim.notify("lvim-installer: lvim-utils UI unavailable", vim.log.levels.ERROR)
+		return
+	end
 	local active = pkg.active_snapshot()
-	vim.ui.select(snaps, {
-		prompt = "Snapshot — active: " .. active,
-		format_item = function(n)
-			return (n == active and "● " or "○ ") .. n
+	local items = {}
+	for _, name in ipairs(snaps) do
+		items[#items + 1] = (name == active and "● " or "○ ") .. name
+	end
+	ui.select({
+		title = "Snapshot — active: " .. active,
+		items = items,
+		callback = function(confirmed, idx)
+			if not confirmed or not idx then
+				return
+			end
+			M.apply(snaps[idx])
 		end,
-	}, function(name)
-		if name then
-			M.apply(name)
-		end
-	end)
+	})
 end
 
 return M
