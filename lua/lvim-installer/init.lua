@@ -11,6 +11,7 @@ local utils = require("lvim-utils.utils")
 local highlights = require("lvim-installer.highlights")
 local prompt = require("lvim-installer.prompt")
 local browser = require("lvim-installer.browser")
+local progress = require("lvim-installer.progress")
 
 local M = {}
 
@@ -50,10 +51,7 @@ function M.setup(opts)
 	vim.api.nvim_create_user_command("LvimInstaller", function(cmd)
 		local args = cmd.fargs
 		if args[1] == "update-registry" then
-			local which = args[2] or "all"
-			pkg.update_registry(which, function()
-				vim.notify("Registry refreshed (" .. which .. ").", vim.log.levels.INFO)
-			end, true)
+			M.update_registry(args[2] or "all")
 			return
 		end
 		if args[1] == "snapshot" then
@@ -83,14 +81,14 @@ function M.setup(opts)
 				end, list)
 			end
 			if words[2] == "update-registry" then
-				return starts({ "mason", "ts", "all" })
+				return starts({ "mason", "ts", "plugin", "all" })
 			end
 			if words[2] == "snapshot" then
 				return starts({ "save" })
 			end
 			return starts({ "lsp", "dap", "linter", "formatter", "parsers", "plugins", "snapshot", "update-registry" })
 		end,
-		desc = "Open the lvim package manager / snapshot / update-registry [mason|ts|all]",
+		desc = "Open the lvim package manager / snapshot / update-registry [mason|ts|plugin|all]",
 	})
 
 	-- ensure_installed: silently install the configured Mason tools (allowlist) at setup.
@@ -105,6 +103,96 @@ function M.setup(opts)
 			pkg.install("mason", todo, function() end)
 		end
 	end
+end
+
+--- Refresh registries and recompute state, shown through the install progress panel.
+--- Catalogues (Mason / parser) are re-downloaded to our local files; plugin and parser
+--- update checks are then run so the "update" markers reflect the fresh data. `which` is
+--- one of mason | ts | plugin | all. Plugins have no upstream catalogue — their phase is
+--- the git outdated check; Mason's "outdated" is recomputed from the refreshed catalogue
+--- on re-render, so it needs no separate check.
+---@param which? string
+---@return nil
+function M.update_registry(which)
+	which = which or "all"
+	local do_mason = which == "mason" or which == "all"
+	local do_ts = which == "ts" or which == "all"
+	local do_plugin = which == "plugin" or which == "all"
+
+	local phases = {}
+	if do_mason then
+		phases[#phases + 1] = "Mason registry"
+	end
+	if do_ts then
+		phases[#phases + 1] = "Parser registry"
+	end
+	if do_plugin then
+		phases[#phases + 1] = "Plugin updates"
+	end
+	if do_ts then
+		phases[#phases + 1] = "Parser updates"
+	end
+	if #phases == 0 then
+		return
+	end
+
+	progress.start(phases)
+	local results, steps = {}, {}
+
+	local function run(i)
+		local step = steps[i]
+		if not step then
+			progress.done(results, "Registries updated (" .. which .. ")")
+			browser.refresh_open()
+			return
+		end
+		step(function()
+			run(i + 1)
+		end)
+	end
+
+	-- Re-download a catalogue (Mason / parser) to our local registry file.
+	local function catalogue_step(phase, kind)
+		steps[#steps + 1] = function(cont)
+			progress.update(phase, "pending", "Downloading\xe2\x80\xa6")
+			pkg.update_registry(kind, function()
+				progress.update(phase, "ok", "Updated")
+				results[phase] = true
+				browser.refresh_open()
+				cont()
+			end, true)
+		end
+	end
+
+	-- Run an outdated check (plugin / parser), reflecting its done/total as the action.
+	local function check_step(phase, fn)
+		steps[#steps + 1] = function(cont)
+			progress.update(phase, "pending", "Checking\xe2\x80\xa6")
+			fn(function(found)
+				progress.update(phase, "ok", string.format("%d outdated", #found))
+				results[phase] = true
+				browser.refresh_open()
+				cont()
+			end, function(done, total)
+				progress.update(phase, "pending", string.format("%d/%d", done, total))
+			end)
+		end
+	end
+
+	if do_mason then
+		catalogue_step("Mason registry", "mason")
+	end
+	if do_ts then
+		catalogue_step("Parser registry", "ts")
+	end
+	if do_plugin then
+		check_step("Plugin updates", pkg.check_outdated)
+	end
+	if do_ts then
+		check_step("Parser updates", pkg.check_parsers_outdated)
+	end
+
+	run(1)
 end
 
 --- Manually offer the unified prompt for `ft` (defaults to the current buffer).

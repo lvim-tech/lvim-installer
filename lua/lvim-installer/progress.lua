@@ -101,8 +101,9 @@ end
 
 --- Finalise: stop the spinner, show a summary, clear the panel after a delay.
 ---@param results table<string, string|true>
+---@param summary? string  Custom summary line (defaults to "Installed N tool(s)").
 ---@return nil
-function M.done(results)
+function M.done(results, summary)
 	if timer then
 		timer:stop()
 		timer:close()
@@ -127,7 +128,8 @@ function M.done(results)
 	end
 	render()
 	local c = cfg()
-	local msg = string.format("Installed %d tool(s)%s", ok_n, fail_n > 0 and (", " .. fail_n .. " failed") or "")
+	local msg = summary and (summary .. (fail_n > 0 and (", " .. fail_n .. " failed") or ""))
+		or string.format("Installed %d tool(s)%s", ok_n, fail_n > 0 and (", " .. fail_n .. " failed") or "")
 	local level = fail_n > 0 and vim.log.levels.WARN or vim.log.levels.INFO
 	if nm and nm.notify then
 		nm.notify(msg, level)
