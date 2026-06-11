@@ -608,68 +608,63 @@ local function mason_pin_menu(name)
 	if not ui then
 		return
 	end
-	local versions, seen = {}, {}
-	local function add(id)
-		local v = id and (purl.parse(id) or {}).version
-		if v and not seen[v] then
-			seen[v] = true
-			versions[#versions + 1] = v
-		end
-	end
+	-- The registry pins one version — use it for the "Latest (…)" label and as the
+	-- fallback when the source query fails.
+	local registry_latest
 	for _, sp in ipairs(registry.all()) do
 		if sp.name == name and sp.source then
-			add(sp.source.id)
-			for _, ov in ipairs(sp.source.version_overrides or {}) do
-				add(ov.id)
-			end
+			registry_latest = (purl.parse(sp.source.id) or {}).version
 			break
 		end
 	end
-	if #versions == 0 then
-		vim.notify("No versions available for " .. name)
-		return
-	end
-	-- "Latest" first, then each version (current marked + pre-selected), then Unpin.
-	local pinned = pkg.get_pin("mason", name)
-	local cur_ver = pinned or pkg.installed_version(name)
-	local items, vals, sel = { "Latest (" .. tostring(versions[1]) .. ")" }, { "__latest__" }, nil
-	if not pinned and cur_ver == versions[1] then
-		sel = items[1]
-	end
-	for _, v in ipairs(versions) do
-		items[#items + 1] = v
-		vals[#vals + 1] = v
-		if cur_ver == v then
-			sel = v
-		end
-	end
-	if pinned then
-		items[#items + 1] = "Unpin"
-		vals[#vals + 1] = "__unpin__"
-	end
-	ui.select({
-		title = "Install " .. name .. " \xe2\x80\x94 choose version",
-		items = items,
-		current_item = sel,
-		callback = function(confirmed, idx)
-			if not confirmed then
+
+	-- Ask the source (npm / pypi / github / cargo / golang) for the full version list,
+	-- so the user can pick any version — not just the registry's latest. Async.
+	pkg.available_versions("mason", name, function(fetched)
+		vim.schedule(function()
+			local versions = fetched or (registry_latest and { registry_latest }) or {}
+			if #versions == 0 then
+				vim.notify("No versions available for " .. name)
 				return
 			end
-			local val = vals[idx]
-			if val == "__unpin__" then
-				pkg.unpin("mason", name)
-				vim.notify("Unpinned " .. name)
-				M.refresh_open()
-			elseif val == "__latest__" then
-				pkg.unpin("mason", name) -- latest = no pin
-				M.mason_op(name, false)
-			elseif val then
-				pkg.pin("mason", name, val)
-				vim.notify("Pinned " .. name .. " \xe2\x86\x92 " .. val)
-				M.mason_op(name, false)
+			if #versions > 40 then
+				versions = vim.list_slice(versions, 1, 40) -- keep the dropdown navigable
 			end
-		end,
-	})
+			local latest = registry_latest or versions[1]
+
+			-- The marker reflects the SNAPSHOT (the chosen version), NOT the installed
+			-- one: a pinned package marks its version; an unpinned one (tracking latest)
+			-- marks "Latest", even when the installed build equals the latest.
+			local pinned = pkg.get_pin("mason", name)
+			local items, vals = { "Latest (" .. tostring(latest) .. ")" }, { "__latest__" }
+			local sel = (not pinned) and items[1] or nil
+			for _, v in ipairs(versions) do
+				items[#items + 1] = v
+				vals[#vals + 1] = v
+				if pinned == v then
+					sel = v
+				end
+			end
+			ui.select({
+				title = "Install " .. name .. " \xe2\x80\x94 choose version",
+				items = items,
+				current_item = sel,
+				callback = function(confirmed, idx)
+					if not confirmed then
+						return
+					end
+					local val = vals[idx]
+					if val == "__latest__" then
+						pkg.unpin("mason", name) -- latest = no entry in the snapshot
+						M.mason_op(name, false)
+					elseif val then
+						pkg.pin("mason", name, val) -- a concrete version = the pin
+						M.mason_op(name, false)
+					end
+				end,
+			})
+		end)
+	end)
 end
 
 --- Run an action on a plugin by name. Shared by the action bar and the R/D/B keys.
