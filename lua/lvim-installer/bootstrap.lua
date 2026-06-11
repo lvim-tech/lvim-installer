@@ -97,13 +97,15 @@ local function build_lines(missing, status, done_count, total, fi, width, build)
 	local bar = ("\xe2\x94\x81"):rep(filled) .. ("\xe2\x94\x80"):rep(bar_w - filled)
 	local head = done and string.format("  \xe2\x9c\x93 Installed %d plugins", total)
 		or string.format("  %s Installing plugins   %d / %d", spin, done_count, total)
-	local lines = { "", head, "  " .. bar }
+	-- No leading blank line: the notify channel already renders its own header row above
+	-- these lines, so a blank here would push everything one row down.
+	local lines = { head, "  " .. bar }
 	local marks = {}
-	marks[#marks + 1] = { 1, 2, 5, (done and "DiagnosticHint") or "String" }
-	marks[#marks + 1] = { 1, 5, #lines[2], (done and "LvimBootstrapDone") or "LvimBootstrapHead" }
+	marks[#marks + 1] = { 0, 2, 5, (done and "DiagnosticHint") or "String" }
+	marks[#marks + 1] = { 0, 5, #lines[1], (done and "LvimBootstrapDone") or "LvimBootstrapHead" }
 	local fb = 2 + #("\xe2\x94\x81"):rep(filled)
-	marks[#marks + 1] = { 2, 2, fb, "Special" }
-	marks[#marks + 1] = { 2, fb, #lines[3], "Comment" }
+	marks[#marks + 1] = { 1, 2, fb, "Special" }
+	marks[#marks + 1] = { 1, fb, #lines[2], "Comment" }
 
 	if not build then
 		-- Clone phase: capped sliding window near the frontier.
