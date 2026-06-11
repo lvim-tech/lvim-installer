@@ -56,6 +56,10 @@ function M.setup(opts)
 			end, true)
 			return
 		end
+		if args[1] == "snapshot" then
+			require("lvim-installer.snapshot").open()
+			return
+		end
 		local map = {
 			lsp = "LSP",
 			dap = "DAP",
@@ -77,7 +81,7 @@ function M.setup(opts)
 			if words[2] == "update-registry" then
 				return starts({ "mason", "ts", "all" })
 			end
-			return starts({ "lsp", "dap", "linter", "formatter", "parsers", "plugins", "update-registry" })
+			return starts({ "lsp", "dap", "linter", "formatter", "parsers", "plugins", "snapshot", "update-registry" })
 		end,
 		desc = "Open the lvim package manager / update-registry [mason|ts|all]",
 	})
