@@ -46,8 +46,8 @@ function M.setup(opts)
 	end
 
 	-- :LvimInstaller [lsp|dap|linter|formatter|parsers|plugins] — open the manager at a
-	-- specific tab. :LvimInstaller update-registry [mason|ts|all] — force-refresh a
-	-- registry catalogue now (ignoring the TTL).
+	-- specific tab. :LvimInstaller update-registry [mason|ts|plugin|all] — refresh the
+	-- catalogues and run the update checks (through the progress panel).
 	vim.api.nvim_create_user_command("LvimInstaller", function(cmd)
 		local args = cmd.fargs
 		if args[1] == "update-registry" then

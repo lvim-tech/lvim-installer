@@ -989,11 +989,7 @@ local function plugin_rows(tab)
 				if value == "Update all" then
 					M.update_all()
 				else
-					vim.notify("lvim-installer: checking for updates…")
-					pkg.check_outdated(function(found)
-						vim.notify(string.format("lvim-installer: %d plugin(s) have updates", #found))
-						M.refresh_open()
-					end)
+					require("lvim-installer").update_registry("plugin")
 				end
 			end,
 		},
@@ -1355,13 +1351,13 @@ local function mason_rows(tab)
 				if not activated then
 					return
 				end
-				local outdated = {}
-				for _, it in ipairs(build_items(tab)) do
-					if mason_outdated(it) then
-						outdated[#outdated + 1] = it.name
-					end
-				end
 				if value == "Update all" then
+					local outdated = {}
+					for _, it in ipairs(build_items(tab)) do
+						if mason_outdated(it) then
+							outdated[#outdated + 1] = it.name
+						end
+					end
 					if #outdated == 0 then
 						vim.notify("lvim-installer: all packages up to date")
 						return
@@ -1372,8 +1368,7 @@ local function mason_rows(tab)
 						M.refresh_open()
 					end)
 				else
-					vim.notify(("lvim-installer: %d package(s) have updates"):format(#outdated))
-					M.refresh_open()
+					require("lvim-installer").update_registry("mason")
 				end
 			end,
 		},
@@ -1574,11 +1569,7 @@ local function parser_rows(tab)
 						M.refresh_open()
 					end)
 				else
-					vim.notify("lvim-installer: checking parsers for updates…")
-					pkg.check_parsers_outdated(function(found)
-						vim.notify(string.format("lvim-installer: %d parser(s) have updates", #found))
-						M.refresh_open()
-					end)
+					require("lvim-installer").update_registry("ts")
 				end
 			end,
 		},
