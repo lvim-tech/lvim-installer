@@ -83,7 +83,7 @@ function M.setup(opts)
 			end
 			return starts({ "lsp", "dap", "linter", "formatter", "parsers", "plugins", "snapshot", "update-registry" })
 		end,
-		desc = "Open the lvim package manager / update-registry [mason|ts|all]",
+		desc = "Open the lvim package manager / snapshot / update-registry [mason|ts|all]",
 	})
 
 	-- ensure_installed: silently install the configured Mason tools (allowlist) at setup.
