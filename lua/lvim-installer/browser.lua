@@ -26,6 +26,7 @@ local TABS = {
 	{ id = "DAP", kind = "mason", category = "DAP", label = "DAP", icon = "" },
 	{ id = "Linter", kind = "mason", category = "Linter", label = "Linter", icon = "" },
 	{ id = "Formatter", kind = "mason", category = "Formatter", label = "Formatter", icon = "" },
+	{ id = "snapshot", kind = "snapshot", label = "Snapshots", icon = "" },
 }
 
 -- Browse state (persists across the close/reopen cycle).
@@ -1589,6 +1590,35 @@ end
 --- Available section (matching how Mason separates the two).
 ---@param tab table
 ---@return table[]
+--- Rows for the Snapshots tab: one selectable row per snapshot file, the active one
+--- marked. Selecting a non-active snapshot switches to it and offers to restore the diff.
+---@param tab table
+---@return table[]
+local function snapshot_rows(tab)
+	local snaps = pkg.snapshots()
+	local active = pkg.active_snapshot()
+	local rows = { { type = "spacer", name = "sec_snapshots", label = "Active: " .. active } }
+	if #snaps == 0 then
+		rows[#rows + 1] = { type = "spacer", name = "empty", label = "(no snapshot files found)" }
+		return rows
+	end
+	for _, name in ipairs(snaps) do
+		local marker = name == active and "● " or "○ "
+		rows[#rows + 1] = {
+			type = "action",
+			name = "snap_" .. name,
+			label = marker .. name,
+			run = function(_, close)
+				if close then
+					close()
+				end
+				require("lvim-installer.snapshot").apply(name)
+			end,
+		}
+	end
+	return rows
+end
+
 local function rows_for(tab)
 	if tab.kind == "plugin" then
 		return plugin_rows(tab)
@@ -1596,6 +1626,8 @@ local function rows_for(tab)
 		return mason_rows(tab)
 	elseif tab.kind == "parser" then
 		return parser_rows(tab)
+	elseif tab.kind == "snapshot" then
+		return snapshot_rows(tab)
 	end
 	-- (no other flat tabs remain)
 	local rows = {

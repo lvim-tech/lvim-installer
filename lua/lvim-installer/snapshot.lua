@@ -44,6 +44,21 @@ local function offer_restore(name)
 	end)
 end
 
+--- Switch the active snapshot to `name` and offer to restore the differences.
+--- Shared by the :LvimInstaller snapshot picker and the browser Snapshots tab.
+---@param name string
+---@return nil
+function M.apply(name)
+	if name == pkg.active_snapshot() then
+		return
+	end
+	if not pkg.select_snapshot(name) then
+		vim.notify("Snapshot: could not switch to '" .. name .. "'.", vim.log.levels.ERROR)
+		return
+	end
+	offer_restore(name)
+end
+
 --- Open the snapshot picker: choose a version set; on switch, offer to restore the diff.
 ---@return nil
 function M.open()
@@ -59,14 +74,9 @@ function M.open()
 			return (n == active and "● " or "○ ") .. n
 		end,
 	}, function(name)
-		if not name or name == active then
-			return
+		if name then
+			M.apply(name)
 		end
-		if not pkg.select_snapshot(name) then
-			vim.notify("Snapshot: could not switch to '" .. name .. "'.", vim.log.levels.ERROR)
-			return
-		end
-		offer_restore(name)
 	end)
 end
 
