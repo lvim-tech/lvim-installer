@@ -68,8 +68,27 @@ local function notify_mod()
 end
 
 --- Build the panel lines + extmarks (shared layout). marks = { row, s, e, hl_group }.
----@return string[], table[]
-local function build_lines(missing, status, done_count, total, fi, width)
+-- One status row: "  <icon> <name>     <text>". Icons (all 3 bytes): ✓ done, ✗ error,
+-- spinner active/building, ○ pending. Appends to `lines`/`marks` (marks use 0-based rows).
+local function status_row(lines, marks, spin, name, st, text)
+	local icon = (st == "done" and "\xe2\x9c\x93")
+		or (st == "error" and "\xe2\x9c\x97")
+		or ((st == "building" or st == "active") and spin)
+		or "\xe2\x97\x8b"
+	local row = #lines
+	lines[#lines + 1] = "  " .. icon .. " " .. name .. (text and ("     " .. text) or "")
+	local icon_hl = (st == "done" and "String")
+		or (st == "error" and "DiagnosticError")
+		or ((st == "building" or st == "active") and "Constant")
+		or "Comment"
+	marks[#marks + 1] = { row, 2, 5, icon_hl }
+	marks[#marks + 1] = { row, 6, 6 + #name, "LvimBootstrapName" }
+end
+
+--- Render the panel. During the clone phase `build` is nil (sliding window of cloning
+--- plugins); during the build phase it is { names, status, done, total } and the clone
+--- line collapses to its summary while the per-library build progress is shown.
+local function build_lines(missing, status, done_count, total, fi, width, build)
 	local spin = FRAMES[fi]
 	local done = done_count >= total
 	local bar_w = width - 4
@@ -80,26 +99,34 @@ local function build_lines(missing, status, done_count, total, fi, width)
 		or string.format("  %s Installing plugins   %d / %d", spin, done_count, total)
 	local lines = { "", head, "  " .. bar }
 	local marks = {}
-	-- header (row 1)
 	marks[#marks + 1] = { 1, 2, 5, (done and "DiagnosticHint") or "String" }
 	marks[#marks + 1] = { 1, 5, #lines[2], (done and "LvimBootstrapDone") or "LvimBootstrapHead" }
-	-- bar (row 2)
 	local fb = 2 + #("\xe2\x94\x81"):rep(filled)
 	marks[#marks + 1] = { 2, 2, fb, "Special" }
 	marks[#marks + 1] = { 2, fb, #lines[3], "Comment" }
-	-- list (capped sliding window near the frontier)
-	local cap = math.max(1, math.min(total, 7))
-	local first = math.max(1, math.min(done_count, total - cap + 1))
-	local row = 2
-	for i = first, math.min(first + cap - 1, total) do
-		local n = missing[i]
-		local st = status[n]
-		local icon = (st == "done" and "\xe2\x9c\x93") or (st == "active" and spin) or "\xe2\x97\x8b"
-		row = row + 1
-		lines[#lines + 1] = "  " .. icon .. " " .. n
-		local icon_hl = (st == "done" and "String") or (st == "active" and "Constant") or "Comment"
-		marks[#marks + 1] = { row, 2, 5, icon_hl }
-		marks[#marks + 1] = { row, 6, #lines[row + 1], "LvimBootstrapName" }
+
+	if not build then
+		-- Clone phase: capped sliding window near the frontier.
+		local cap = math.max(1, math.min(total, 7))
+		local first = math.max(1, math.min(done_count, total - cap + 1))
+		for i = first, math.min(first + cap - 1, total) do
+			status_row(lines, marks, spin, missing[i], status[missing[i]])
+		end
+	else
+		-- Build phase: the clone summary stays above; show per-library build progress.
+		lines[#lines + 1] = ""
+		local bdone = build.done >= build.total
+		local bhead = bdone and string.format("  \xe2\x9c\x93 Built %d native libraries", build.total)
+			or string.format("  %s Building native libraries   %d / %d", spin, build.done, build.total)
+		local hrow = #lines
+		lines[#lines + 1] = bhead
+		marks[#marks + 1] = { hrow, 2, 5, (bdone and "DiagnosticHint") or "String" }
+		marks[#marks + 1] = { hrow, 5, #bhead, (bdone and "LvimBootstrapDone") or "LvimBootstrapHead" }
+		for _, n in ipairs(build.names) do
+			local st = build.status[n]
+			local text = (st == "building" and "building\xe2\x80\xa6") or (st == "error" and "failed") or nil
+			status_row(lines, marks, spin, n, st, text)
+		end
 	end
 	return lines, marks
 end
@@ -108,11 +135,18 @@ end
 ---@param specs table[]
 ---@param missing string[]
 ---@param nm table
-local function run_notify(specs, missing, nm)
+local function run_notify(specs, missing, nm, opts)
 	local total = #missing
 	local status, pending = {}, {}
 	for _, n in ipairs(missing) do
 		status[n], pending[n] = "pending", true
+	end
+	-- Which of the missing plugins carry a build hook (reported by the host loader).
+	local has_build = {}
+	for _, spec in ipairs(specs) do
+		if spec.has_build then
+			has_build[spec.name] = true
+		end
 	end
 	local done_count, fi = 0, 1
 
@@ -183,9 +217,41 @@ local function run_notify(specs, missing, nm)
 	if timer then
 		timer:stop()
 		timer:close()
+		timer = nil
 	end
 	done_count = total
 	render()
+
+	-- Build phase: synchronously run each freshly-installed plugin's build hook (the
+	-- authors' convention — e.g. blink.cmp's :pwait()) while the panel shows per-library
+	-- "building … ✓ / ✗". The build blocks, so we render + redraw around each one.
+	local build_names = {}
+	for _, n in ipairs(missing) do
+		if has_build[n] then
+			build_names[#build_names + 1] = n
+		end
+	end
+	if #build_names > 0 and opts and type(opts.build_runner) == "function" then
+		local b = { names = build_names, status = {}, done = 0, total = #build_names }
+		for _, n in ipairs(build_names) do
+			b.status[n] = "pending"
+		end
+		local function brender()
+			local lines, marks = build_lines(missing, status, done_count, total, fi, 52, b)
+			nm.progress_update("lvim-bootstrap", lines, marks)
+			pcall(vim.cmd, "redraw")
+		end
+		brender()
+		for _, n in ipairs(build_names) do
+			b.status[n] = "building"
+			brender()
+			local pok, rok = pcall(opts.build_runner, n)
+			b.status[n] = (pok and rok ~= false) and "done" or "error"
+			b.done = b.done + 1
+			brender()
+		end
+	end
+
 	vim.defer_fn(function()
 		pcall(vim.api.nvim_del_augroup_by_id, grp)
 		nm.progress_clear("lvim-bootstrap")
@@ -253,7 +319,7 @@ function M.install(specs, opts)
 	end
 	if nm then
 		ensure_theme(opts.theme_fallbacks)
-		run_notify(specs, missing, nm)
+		run_notify(specs, missing, nm, opts)
 	else
 		-- Could not bring up lvim-utils — install silently. No separate float, ever.
 		vim.pack.add(specs, { load = false, confirm = false })
