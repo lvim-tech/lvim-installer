@@ -100,14 +100,17 @@ end
 ---@param info table
 ---@return string
 local function plugin_label(info)
-	local extra = ""
+	local parts = {}
+	if info.dependency then
+		parts[#parts + 1] = "dep"
+	end
 	if info.loaded and info.time_ms then
-		extra = string.format("%.2f ms", info.time_ms)
+		parts[#parts + 1] = string.format("%.2f ms", info.time_ms)
 	end
 	if info.outdated then
-		extra = extra ~= "" and (extra .. "    update") or "update"
+		parts[#parts + 1] = "update"
 	end
-	return extra
+	return table.concat(parts, "    ")
 end
 
 -- Per-action icon for the inline action rows (4-space indent baked in).
@@ -126,6 +129,7 @@ local FIELD_ICON = {
 	Outdated = "󰑐",
 	Triggers = "󰉁",
 	Deps = "󰌹",
+	["Required by"] = "󰌹",
 	-- Mason package fields
 	Installed = "󰓹",
 	Latest = "󰚰",
@@ -147,7 +151,7 @@ local function cell(glyph)
 end
 
 -- Segmented filter modes shown as the top toolbar bar.
-local FILTER_MODES = { "All", "Loaded", "Lazy", "Outdated", "Up-to-date", "Search" }
+local FILTER_MODES = { "All", "Loaded", "Lazy", "Deps", "Outdated", "Up-to-date", "Search" }
 
 --- Whether a plugin item passes the active filter mode (and search text).
 ---@param item table
@@ -159,6 +163,8 @@ local function passes_filter(item)
 		return info.loaded == true
 	elseif mode == "Lazy" then
 		return not info.loaded
+	elseif mode == "Deps" then
+		return info.dependency == true
 	elseif mode == "Outdated" then
 		return info.outdated == true
 	elseif mode == "Up-to-date" then
@@ -182,6 +188,9 @@ local function plugin_detail_fields(info, pin)
 		f[#f + 1] = { "Load time", string.format("%.2f ms", info.time_ms) }
 	end
 	f[#f + 1] = { "Reason", tostring(info.reason) }
+	if info.dependency and info.dep_of then
+		f[#f + 1] = { "Required by", tostring(info.dep_of) }
+	end
 	f[#f + 1] = { "Source", tostring(info.src or "-") }
 	f[#f + 1] = { "Path", tostring(info.path or "-") }
 	local vparts = {}
