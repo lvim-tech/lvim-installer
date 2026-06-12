@@ -364,20 +364,17 @@ local function reinstall_menu(name, info)
 		local cur_tag = (rt == "tag") and val or nil
 		local cur_conv = (rt == "tag") and ctx or nil
 
-		-- Tracking the default branch's tip == "follow latest", so it clears the pin
-		-- rather than recording one. Any other choice (tag, commit, non-default branch)
-		-- is an explicit pin.
-		local default_branch = pkg.plugin_default_branch(name)
-
 		local function finish(ref, conv)
 			local err = pkg.plugin_checkout(name, ref)
 			if err then
 				vim.notify("Checkout failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
 			else
-				if conv.reftype == "branch" and conv.branch == default_branch then
-					pkg.unpin("plugin", name)
-				else
+				-- A tag or commit is an explicit, fixed version → pin. "Latest" / a branch
+				-- tip is "follow latest", so it clears the pin instead of recording one.
+				if conv.reftype == "tag" or conv.reftype == "commit" then
 					pkg.pin("plugin", name, conv.version, conv.reftype, conv.branch)
+				else
+					pkg.unpin("plugin", name)
 				end
 				vim.notify(name .. " \xe2\x86\x92 " .. ref)
 			end
@@ -1352,9 +1349,11 @@ local function mason_rows(tab)
 					return
 				end
 				if value == "Update all" then
+					-- Skip explicitly-pinned packages: a pin means "hold this version",
+					-- so a bulk update must not touch it (use the per-package Update for that).
 					local outdated = {}
 					for _, it in ipairs(build_items(tab)) do
-						if mason_outdated(it) then
+						if mason_outdated(it) and not pkg.get_pin("mason", it.name) then
 							outdated[#outdated + 1] = it.name
 						end
 					end
@@ -1553,21 +1552,37 @@ local function parser_rows(tab)
 					return
 				end
 				if value == "Update outdated" then
-					local names = {}
-					for _, it in ipairs(build_items(tab)) do
-						if it.outdated then
-							names[#names + 1] = it.name
+					local function collect()
+						local names = {}
+						for _, it in ipairs(build_items(tab)) do
+							if it.outdated then
+								names[#names + 1] = it.name
+							end
 						end
+						return names
 					end
-					if #names == 0 then
-						vim.notify("lvim-installer: no parser updates")
-						return
+					local function do_update(names)
+						if #names == 0 then
+							vim.notify("lvim-installer: parsers are up to date")
+							M.refresh_open()
+							return
+						end
+						vim.notify(("lvim-installer: updating %d parser(s)\xe2\x80\xa6"):format(#names))
+						pkg.update("parser", names, function()
+							vim.notify(("lvim-installer: updated %d parser(s)"):format(#names))
+							M.refresh_open()
+						end)
 					end
-					vim.notify(("lvim-installer: updating %d parser(s)\xe2\x80\xa6"):format(#names))
-					pkg.update("parser", names, function()
-						vim.notify(("lvim-installer: updated %d parser(s)"):format(#names))
-						M.refresh_open()
-					end)
+					local names = collect()
+					if #names > 0 then
+						do_update(names)
+					else
+						-- Nothing known yet — check first (like the plugin Update all), then update.
+						vim.notify("lvim-installer: checking parsers for updates…")
+						pkg.check_parsers_outdated(function()
+							do_update(collect())
+						end)
+					end
 				else
 					require("lvim-installer").update_registry("ts")
 				end
@@ -2268,6 +2283,13 @@ function M.update_all()
 		pump()
 	end
 
+	-- Explicitly-pinned plugins (a fixed tag/commit) are held, so a bulk update skips them.
+	local function unpinned(names)
+		return vim.tbl_filter(function(n)
+			return not pkg.get_pin("plugin", n)
+		end, names)
+	end
+
 	-- Targets: the known-outdated set; if none known, run a check first.
 	local targets = {}
 	for _, info in ipairs(pkg.plugins()) do
@@ -2275,12 +2297,13 @@ function M.update_all()
 			targets[#targets + 1] = info.name
 		end
 	end
+	targets = unpinned(targets)
 	if #targets > 0 then
 		run(targets)
 	else
 		vim.notify("lvim-installer: checking for updates…")
 		pkg.check_outdated(function(found)
-			run(found)
+			run(unpinned(found))
 		end)
 	end
 end
