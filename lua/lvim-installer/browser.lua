@@ -47,6 +47,12 @@ local function tab_mode(tab_id)
     return state.filter_modes[tab_id] or "All"
 end
 
+-- Forward declaration: the shared in-row spinner used by plugin / mason / parser ops to
+-- unify their feedback (a live spinner during the op + a final notification). Defined after
+-- find_row (which it needs); referenced earlier by update_action.
+---@type fun(rowname: string, verb: string): fun(s: string), fun(msg?: string, level?: integer)
+local row_spinner
+
 --- Build the item list for a tab, each with its kind and installed status.
 ---@param tab table
 ---@return table[]
@@ -570,65 +576,61 @@ end
 ---@param name string
 ---@param info table
 local function update_action(name, info)
-    vim.notify("Checking " .. name .. " for updates\xe2\x80\xa6")
+    local _, finish = row_spinner("p_" .. name, "Updating…")
     pkg.plugin_fetch(name, function()
         local pin = pkg.get_pin_full("plugin", name)
-        if not pin then
-            return
-        end
-        local rt = pin.reftype
+        local rt = pin and pin.reftype
         if rt == "tag" and pin.branch then
             local newest = pkg.plugin_resolve_tag(name, pin.branch)
             local cur = pkg.plugin_current(name)
             if newest and (not cur or cur.value ~= newest) then
                 local err = pkg.plugin_checkout(name, newest)
                 if err then
-                    vim.notify("Update failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
+                    finish("Update failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
                 else
                     pkg.pin("plugin", name, newest, "tag", pin.branch)
-                    vim.notify(name .. " \xe2\x86\x92 " .. newest .. " (newest " .. pin.branch .. ".x)")
+                    finish(name .. " → " .. newest .. " (newest " .. pin.branch .. ".x)")
                 end
-                M.refresh_open()
             else
-                vim.notify(name .. ": already newest in " .. pin.branch .. ".x")
+                finish(name .. ": already newest in " .. pin.branch .. ".x")
             end
-            return
         elseif rt == "branch" then
             local err = pkg.plugin_update_branch(name, pin.version)
             if err then
-                vim.notify("Update failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
+                finish("Update failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
             else
                 pkg.pin("plugin", name, pin.version, "branch", pin.version)
-                vim.notify(name .. ": " .. pin.version .. " updated to tip")
+                finish(name .. ": " .. pin.version .. " updated to tip")
             end
-            M.refresh_open()
-            return
         elseif rt == "tag" or rt == "commit" then
-            vim.notify(name .. " is fixed (" .. rt .. " " .. tostring(pin.version) .. ") \xe2\x80\x94 use Reinstall")
-            return
-        end
-        -- No stored convention → live git state.
-        local cur = pkg.plugin_current(name)
-        if cur and cur.kind == "branch" then
-            local err = pkg.plugin_update_branch(name, cur.value)
-            if not err then
-                vim.notify(name .. ": " .. cur.value .. " updated to tip")
-            end
-            M.refresh_open()
-        elseif cur and cur.kind == "commit" then
-            -- Un-pinned commit → advance on the default branch.
-            local default = pkg.plugin_default_branch(name)
-            if default then
-                local err = pkg.plugin_update_branch(name, default)
-                if not err then
-                    vim.notify(name .. ": advanced on " .. default)
-                end
-                M.refresh_open()
-            else
-                vim.notify(name .. ": no default branch to advance")
-            end
+            finish(name .. " is fixed (" .. rt .. " " .. tostring(pin.version) .. ") — use Reinstall")
         else
-            vim.notify(name .. " is on a fixed tag \xe2\x80\x94 use Reinstall to change")
+            -- No stored convention (or no pin at all) → live git state. (Previously an early
+            -- `if not pin then return` made this branch dead for unpinned plugins, so pressing
+            -- Update gave the "Checking…" feedback and then nothing.)
+            local cur = pkg.plugin_current(name)
+            if cur and cur.kind == "branch" then
+                local err = pkg.plugin_update_branch(name, cur.value)
+                finish(
+                    err and ("Update failed for " .. name .. ": " .. err)
+                        or (name .. ": " .. cur.value .. " updated to tip"),
+                    err and vim.log.levels.ERROR or nil
+                )
+            elseif cur and cur.kind == "commit" then
+                -- Un-pinned commit → advance on the default branch.
+                local default = pkg.plugin_default_branch(name)
+                if default then
+                    local err = pkg.plugin_update_branch(name, default)
+                    finish(
+                        err and ("Update failed for " .. name .. ": " .. err) or (name .. ": advanced on " .. default),
+                        err and vim.log.levels.ERROR or nil
+                    )
+                else
+                    finish(name .. ": no default branch to advance")
+                end
+            else
+                finish(name .. " is on a fixed tag — use Reinstall to change")
+            end
         end
     end)
 end
@@ -1195,7 +1197,7 @@ local function mason_action(name, action)
         })
     elseif action == "update" then
         pkg.unpin("mason", name) -- Update = jump to the latest version
-        M.mason_op(name, false)
+        M.mason_op(name, true)
     else -- install / reinstall → choose a version
         mason_pin_menu(name)
     end
@@ -1888,6 +1890,59 @@ local function find_row(rowname)
     return nil
 end
 
+--- Shared in-row spinner for a long operation, with a final notification — the single
+--- feedback style used by plugin / mason / parser ops. Animates a braille spinner on the row
+--- named `rowname` labelled "<verb>  <status>"; returns (set_status, finish). set_status(s)
+--- updates the trailing status text; finish(msg, level) stops the spinner, re-renders the panel
+--- and (when msg is given) shows the result notification. Works even when the row is not found
+--- (no spinner, but finish still refreshes + notifies).
+---@param rowname string
+---@param verb string
+---@return fun(s: string), fun(msg?: string, level?: integer)
+row_spinner = function(rowname, verb)
+    local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+    local row = find_row(rowname)
+    local fi, status_txt = 1, verb
+    local timer = vim.uv.new_timer()
+    local done = false
+    local function finish(msg, level)
+        if done then
+            return
+        end
+        done = true
+        if timer then
+            timer:stop()
+            timer:close()
+            timer = nil
+        end
+        M.refresh_open()
+        if msg then
+            vim.notify(msg, level)
+        end
+    end
+    if row and timer then
+        row.icon_hl = "LvimInstallerProgress"
+        row.text_hl = "LvimInstallerProgress"
+        timer:start(
+            0,
+            90,
+            vim.schedule_wrap(function()
+                row.label = frames[fi] .. "  " .. status_txt
+                fi = fi % #frames + 1
+                if state.handle and state.handle.valid() then
+                    state.handle.render()
+                    pcall(vim.cmd, "redraw")
+                else
+                    finish()
+                end
+            end)
+        )
+    end
+    return function(s)
+        status_txt = verb .. "  " .. s
+    end, finish
+end
+
 --- Rebuild every tab's rows from fresh data and re-render the open window.
 ---@return nil
 --- Persist the live expanded state of plugin rows (native accordion) so a rebuild
@@ -2014,119 +2069,33 @@ end
 ---@param is_update boolean
 ---@return nil
 function M.mason_op(name, is_update)
-    local row = find_row("mi_" .. name)
-    if not row then
-        return
-    end
-    local verb = is_update and "Updating\xe2\x80\xa6" or "Installing\xe2\x80\xa6"
-    row.icon_hl = "LvimInstallerProgress"
-    row.text_hl = "LvimInstallerProgress"
-    local frames = {
-        "\xe2\xa0\x8b",
-        "\xe2\xa0\x99",
-        "\xe2\xa0\xb9",
-        "\xe2\xa0\xb8",
-        "\xe2\xa0\xbc",
-        "\xe2\xa0\xb4",
-        "\xe2\xa0\xa6",
-        "\xe2\xa0\xa7",
-        "\xe2\xa0\x87",
-        "\xe2\xa0\x8f",
-    }
-    local fi = 1
-    local status_txt = verb
-    local timer = vim.uv.new_timer()
-    local done = false
-    local function finish()
-        if done then
-            return
-        end
-        done = true
-        if timer then
-            timer:stop()
-            timer:close()
-            timer = nil
-        end
-        M.refresh_open()
-    end
-    timer:start(
-        0,
-        90,
-        vim.schedule_wrap(function()
-            row.label = frames[fi] .. "  " .. status_txt
-            fi = fi % #frames + 1
-            if state.handle and state.handle.valid() then
-                state.handle.render()
-                pcall(vim.cmd, "redraw")
-            else
-                finish()
-            end
-        end)
-    )
+    local before = pkg.installed_version(name)
+    -- No per-step status: a plain spinner keeps mason consistent with the plugin / parser ops
+    -- (which are single git/network calls with nothing granular to report).
+    local _, finish = row_spinner("mi_" .. name, is_update and "Updating…" or "Installing…")
     pkg.install("mason", { name }, function()
-        finish()
-    end, {
-        on_progress = function(n, st, action)
-            if n == name and (st or action) then
-                status_txt = verb .. "  " .. tostring(st or action)
+        local after = pkg.installed_version(name)
+        local msg
+        if is_update then
+            if before and after and tostring(before) == tostring(after) then
+                msg = name .. ": already the latest version"
+            else
+                msg = name .. " → " .. tostring(after or "latest")
             end
-        end,
-    })
+        else
+            msg = name .. ": installed" .. (after and (" " .. tostring(after)) or "")
+        end
+        finish(msg)
+    end)
 end
 
 --- Install one Treesitter parser with a live in-popup spinner.
 ---@param name string
 ---@return nil
 function M.parser_op(name)
-    local row = find_row("ti_" .. name)
-    if not row then
-        return
-    end
-    row.icon_hl = "LvimInstallerProgress"
-    row.text_hl = "LvimInstallerProgress"
-    local frames = {
-        "\xe2\xa0\x8b",
-        "\xe2\xa0\x99",
-        "\xe2\xa0\xb9",
-        "\xe2\xa0\xb8",
-        "\xe2\xa0\xbc",
-        "\xe2\xa0\xb4",
-        "\xe2\xa0\xa6",
-        "\xe2\xa0\xa7",
-        "\xe2\xa0\x87",
-        "\xe2\xa0\x8f",
-    }
-    local fi = 1
-    local timer = vim.uv.new_timer()
-    local done = false
-    local function finish()
-        if done then
-            return
-        end
-        done = true
-        if timer then
-            timer:stop()
-            timer:close()
-            timer = nil
-        end
-        M.refresh_open()
-    end
-    timer:start(
-        0,
-        90,
-        vim.schedule_wrap(function()
-            row.label = frames[fi] .. "  Installing\xe2\x80\xa6"
-            fi = fi % #frames + 1
-            if state.handle and state.handle.valid() then
-                state.handle.render()
-                pcall(vim.cmd, "redraw")
-            else
-                finish()
-            end
-        end)
-    )
+    local _, finish = row_spinner("ti_" .. name, "Installing…")
     pkg.install("parser", { name }, function()
-        finish()
+        finish(name .. ": parser installed")
     end)
 end
 
