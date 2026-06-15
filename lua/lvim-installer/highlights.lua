@@ -14,49 +14,49 @@ local M = {}
 --- table) so it re-reads c.* on every call and picks up palette swaps.
 ---@return table<string, table>
 local function build()
-	local c = colors
-	return {
-		-- Toolbar (Filter / Check for updates / Update all)
-		LvimInstallerToolbar = { fg = c.blue },
-		LvimInstallerToolbarIcon = { fg = c.orange },
-		-- Section headers ("Loaded (n)" / "Lazy (n)")
-		LvimInstallerSection = { fg = c.blue },
-		-- Plugin name, by state
-		LvimInstallerPluginLoaded = { fg = c.fg },
-		LvimInstallerPluginLazy = { fg = c.comment },
-		LvimInstallerPluginOutdated = { fg = c.orange },
-		-- Plugin status dot, by state
-		LvimInstallerStatusLoaded = { fg = c.green },
-		LvimInstallerStatusLazy = { fg = c.comment },
-		LvimInstallerStatusOutdated = { fg = c.orange },
-		-- Parent-row value (plugin load time / mason version) — yellow
-		LvimInstallerParentValue = { fg = c.yellow },
-		-- Update marker on a parent value when an update is available
-		LvimInstallerUpdateMark = { fg = c.orange },
-		-- Inline detail rows: field icon + label vs the value
-		LvimInstallerDetail = { fg = c.comment },
-		LvimInstallerDetailLabel = { fg = c.cyan },
-		LvimInstallerDetailValue = { fg = c.purple },
-		-- Link-like values (Source URL / Path) — blue
-		LvimInstallerLink = { fg = c.blue },
-		-- Version / Tracking values — magenta
-		LvimInstallerVersion = { fg = c.magenta },
-		-- Status value: up to date (green) vs outdated (red)
-		LvimInstallerUpToDate = { fg = c.green },
-		LvimInstallerOutdated = { fg = c.red },
-		-- Inline action rows
-		LvimInstallerAction = { fg = c.blue },
-		LvimInstallerActionIcon = { fg = c.orange },
-		-- Per-button action colours
-		LvimInstallerActionInstall = { fg = c.green },
-		LvimInstallerActionRemove = { fg = c.red },
-		LvimInstallerActionOpen = { fg = c.blue },
-		LvimInstallerActionHint = { fg = c.cyan },
-		-- Active segmented option (bold everywhere)
-		LvimInstallerActive = { bold = true },
-		-- A plugin row while it is updating / reinstalling
-		LvimInstallerProgress = { fg = c.red },
-	}
+    local c = colors
+    return {
+        -- Toolbar (Filter / Check for updates / Update all)
+        LvimInstallerToolbar = { fg = c.blue },
+        LvimInstallerToolbarIcon = { fg = c.orange },
+        -- Section headers ("Loaded (n)" / "Lazy (n)")
+        LvimInstallerSection = { fg = c.blue },
+        -- Plugin name, by state
+        LvimInstallerPluginLoaded = { fg = c.fg },
+        LvimInstallerPluginLazy = { fg = c.comment },
+        LvimInstallerPluginOutdated = { fg = c.orange },
+        -- Plugin status dot, by state
+        LvimInstallerStatusLoaded = { fg = c.green },
+        LvimInstallerStatusLazy = { fg = c.comment },
+        LvimInstallerStatusOutdated = { fg = c.orange },
+        -- Parent-row value (plugin load time / mason version) — yellow
+        LvimInstallerParentValue = { fg = c.yellow },
+        -- Update marker on a parent value when an update is available
+        LvimInstallerUpdateMark = { fg = c.orange },
+        -- Inline detail rows: field icon + label vs the value
+        LvimInstallerDetail = { fg = c.comment },
+        LvimInstallerDetailLabel = { fg = c.cyan },
+        LvimInstallerDetailValue = { fg = c.purple },
+        -- Link-like values (Source URL / Path) — blue
+        LvimInstallerLink = { fg = c.blue },
+        -- Version / Tracking values — magenta
+        LvimInstallerVersion = { fg = c.magenta },
+        -- Status value: up to date (green) vs outdated (red)
+        LvimInstallerUpToDate = { fg = c.green },
+        LvimInstallerOutdated = { fg = c.red },
+        -- Inline action rows
+        LvimInstallerAction = { fg = c.blue },
+        LvimInstallerActionIcon = { fg = c.orange },
+        -- Per-button action colours
+        LvimInstallerActionInstall = { fg = c.green },
+        LvimInstallerActionRemove = { fg = c.red },
+        LvimInstallerActionOpen = { fg = c.blue },
+        LvimInstallerActionHint = { fg = c.cyan },
+        -- Active segmented option (bold everywhere)
+        LvimInstallerActive = { bold = true },
+        -- A plugin row while it is updating / reinstalling
+        LvimInstallerProgress = { fg = c.red },
+    }
 end
 
 M.build = build
@@ -65,25 +65,25 @@ M.build = build
 --- on ColorScheme and rebuilt whenever the lvim-utils palette changes.
 ---@return nil
 function M.setup()
-	local ok, hl = pcall(require, "lvim-utils.highlight")
-	if not ok then
-		-- lvim-utils unavailable: plain one-shot apply so the UI is still coloured.
-		for group, opts in pairs(build()) do
-			pcall(vim.api.nvim_set_hl, 0, group, vim.tbl_extend("force", { default = true }, opts))
-		end
-		return
-	end
-	-- force = true: nothing else defines LvimInstaller* groups, so forcing keeps
-	-- them correct across palette swaps (a stale registry entry can't shadow the
-	-- freshly-built colours, which the define_if_missing path would).
-	hl.register(build(), true)
-	hl.setup()
-	local colors_ok, colors = pcall(require, "lvim-utils.colors")
-	if colors_ok then
-		colors.on_change(function()
-			hl.register(build(), true)
-		end)
-	end
+    local ok, hl = pcall(require, "lvim-utils.highlight")
+    if not ok then
+        -- lvim-utils unavailable: plain one-shot apply so the UI is still coloured.
+        for group, opts in pairs(build()) do
+            pcall(vim.api.nvim_set_hl, 0, group, vim.tbl_extend("force", { default = true }, opts))
+        end
+        return
+    end
+    -- force = true: nothing else defines LvimInstaller* groups, so forcing keeps
+    -- them correct across palette swaps (a stale registry entry can't shadow the
+    -- freshly-built colours, which the define_if_missing path would).
+    hl.register(build(), true)
+    hl.setup()
+    local colors_ok, colors = pcall(require, "lvim-utils.colors")
+    if colors_ok then
+        colors.on_change(function()
+            hl.register(build(), true)
+        end)
+    end
 end
 
 return M

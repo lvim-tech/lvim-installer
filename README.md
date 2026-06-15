@@ -61,14 +61,14 @@ are independent and must come before `lvim-installer`, which requires both.
 
 ```lua
 vim.pack.add({
-  "https://github.com/lvim-tech/lvim-utils",
-  "https://github.com/lvim-tech/lvim-pkg",
-  "https://github.com/lvim-tech/lvim-installer",
+    "https://github.com/lvim-tech/lvim-utils",
+    "https://github.com/lvim-tech/lvim-pkg",
+    "https://github.com/lvim-tech/lvim-installer",
 })
 
-require("lvim-utils").setup()      -- UI / notify base
-require("lvim-pkg").setup()        -- install engine + plugin registry
-require("lvim-installer").setup()  -- unified prompt + :LvimInstaller command
+require("lvim-utils").setup() -- UI / notify base
+require("lvim-pkg").setup() -- install engine + plugin registry
+require("lvim-installer").setup() -- unified prompt + :LvimInstaller command
 ```
 
 That is the entire package manager. Open `:LvimInstaller` to install the rest —
@@ -89,10 +89,10 @@ override its options, add to your user module (`lua/modules/user/init.lua`):
 
 ```lua
 modules["lvim-tech/lvim-installer"] = {
-  dependencies = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
-  opts = {
-    -- see Configuration
-  },
+    dependencies = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
+    opts = {
+        -- see Configuration
+    },
 }
 ```
 
@@ -110,11 +110,14 @@ modules["lvim-tech/lvim-installer"] = {
 :LvimInstaller update-registry          " force-refresh both catalogues now
 :LvimInstaller update-registry mason    " just the Mason catalogue
 :LvimInstaller update-registry ts       " just the treesitter parser registry
+
+:LvimInstaller snapshot                 " open the snapshots tab
+:LvimInstaller snapshot save            " save the current state as a snapshot
 ```
 
 ```lua
-require("lvim-installer").open("LSP")    -- open the manager at a tab
-require("lvim-installer").offer("go")    -- manually offer the prompt for a filetype
+require("lvim-installer").open("LSP") -- open the manager at a tab
+require("lvim-installer").offer("go") -- manually offer the prompt for a filetype
 ```
 
 | Function | Description |
@@ -122,6 +125,7 @@ require("lvim-installer").offer("go")    -- manually offer the prompt for a file
 | `setup(opts?)` | Register the unified prompt and the `:LvimInstaller` command. |
 | `open(tab?)` | Open the manager at a tab: `"LSP"` \| `"DAP"` \| `"Linter"` \| `"Formatter"` \| `"parser"` \| `"plugin"`. |
 | `offer(ft?)` | Manually offer the prompt for a filetype (default: current buffer). |
+| `update_registry(which?)` | Refresh catalogues + run update checks (`mason` \| `ts` \| `plugin` \| `all`; default `all`). |
 
 ## Configuration
 
@@ -129,34 +133,38 @@ require("lvim-installer").offer("go")    -- manually offer the prompt for a file
 
 ```lua
 require("lvim-installer").setup({
-  -- Unified first-open prompt appearance / behaviour.
-  prompt = {
-    title_icon = "󰏗 ",
-    snooze_ms  = 5 * 60 * 1000,   -- snooze duration after a plain skip (q / <Esc>)
-  },
+    -- Unified first-open prompt appearance / behaviour.
+    prompt = {
+        title_icon = "󰏗 ",
+        snooze_ms = 5 * 60 * 1000, -- snooze duration after a plain skip (q / <Esc>)
+    },
 
-  -- Mason tools (LSP / DAP / linter / formatter) to install silently at setup.
-  ensure_installed = {},   -- e.g. { "lua_ls", "stylua", "ruff" } (allowlist)
+    -- Mason tools (LSP / DAP / linter / formatter) to install silently at setup.
+    ensure_installed = {}, -- e.g. { "lua_ls", "stylua", "ruff" } (allowlist)
 
-  -- How many plugins to update at once during "Update all" (sequential batches).
-  update_concurrency = 4,
+    -- How many plugins to update at once during "Update all" (sequential batches).
+    update_concurrency = 4,
 
-  -- Progress panel (driven through lvim-utils.notify).
-  progress = {
-    id = "lvim-installer", name = "Installer", icon = "󰏗",
-    header_hl  = "LvimNotifyHeaderInfo",
-    spinner    = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
-    icon_ok    = "✓",
-    icon_error = "✗",
-    done_ttl   = 4000,
-  },
+    -- Progress panel (driven through lvim-utils.notify).
+    progress = {
+        id = "lvim-installer",
+        name = "Installer",
+        icon = "󰏗",
+        header_hl = "LvimNotifyHeaderInfo",
+        spinner = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
+        icon_ok = "✓",
+        icon_error = "✗",
+        done_ttl = 4000,
+    },
 
-  -- Passed verbatim to lvim-utils.ui.new(): popup geometry, icons, labels, keys.
-  popup_global = {
-    position = "editor", width = 0.8, height = "auto",
-    close_keys = { "q", "<Esc>" },
-    -- icons = { ... }, labels = { ... }, keys = { ... }
-  },
+    -- Passed verbatim to lvim-utils.ui.new(): popup geometry, icons, labels, keys.
+    popup_global = {
+        position = "editor",
+        width = 0.8,
+        height = "auto",
+        close_keys = { "q", "<Esc>" },
+        -- icons = { ... }, labels = { ... }, keys = { ... }
+    },
 })
 ```
 

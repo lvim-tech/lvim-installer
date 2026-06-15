@@ -1,0 +1,66 @@
+-- lvim-installer: :checkhealth lvim-installer
+--
+-- Checks the UI layer's foundations: its two hard dependencies (lvim-pkg engine,
+-- lvim-utils UI/notify), the built-in vim.pack used to manage plugins, the registered
+-- :LvimInstaller command, and the config shape. All install/data work is lvim-pkg's
+-- (see :checkhealth lvim-pkg).
+--
+---@module "lvim-installer.health"
+
+local config = require("lvim-installer.config")
+
+local M = {}
+
+function M.check()
+    local h = vim.health
+    h.start("lvim-installer")
+
+    -- ── core ──────────────────────────────────────────────────────────────────
+    if vim.fn.has("nvim-0.10") == 1 then
+        h.ok("Neovim >= 0.10")
+    else
+        h.error("Neovim >= 0.10 is required")
+    end
+    if type(vim.pack) == "table" and type(vim.pack.add) == "function" then
+        h.ok("built-in vim.pack available (plugin install / update / remove)")
+    else
+        h.warn("vim.pack not available — the Plugins tab needs Neovim's built-in vim.pack")
+    end
+
+    -- ── hard dependencies ─────────────────────────────────────────────────────
+    local ok_pkg, pkg = pcall(require, "lvim-pkg")
+    if ok_pkg and type(pkg.install) == "function" then
+        h.ok("lvim-pkg found (the engine: data resolution + install operations)")
+    else
+        h.error("lvim-pkg not found — required: it performs all data + install/update/remove work")
+    end
+    local ok_utils = pcall(require, "lvim-utils.utils")
+    if ok_utils then
+        h.ok("lvim-utils found (UI / notify base)")
+    else
+        h.error("lvim-utils not found — required for the prompt / manager UI and notifications")
+    end
+
+    -- ── command ───────────────────────────────────────────────────────────────
+    if vim.fn.exists(":LvimInstaller") == 2 then
+        h.ok(":LvimInstaller command registered")
+    else
+        h.warn(":LvimInstaller not registered — call require('lvim-installer').setup()")
+    end
+
+    -- ── config shape ──────────────────────────────────────────────────────────
+    local ei_ok = type(config.ensure_installed) == "table"
+    local uc_ok = type(config.update_concurrency) == "number"
+    if ei_ok and uc_ok and type(config.popup_global) == "table" then
+        h.ok(
+            ("config: ensure_installed=%d tool(s), update_concurrency=%d"):format(
+                #config.ensure_installed,
+                config.update_concurrency
+            )
+        )
+    else
+        h.warn("config: expected ensure_installed:string[], update_concurrency:number, popup_global:table")
+    end
+end
+
+return M

@@ -1,0 +1,132 @@
+*lvim-installer.txt*       The package-manager UI of the LVIM ecosystem
+
+==============================================================================
+CONTENTS                                                    *lvim-installer*
+
+  1. Introduction ........................... |lvim-installer-intro|
+  2. What it manages ........................ |lvim-installer-tabs|
+  3. Installation ........................... |lvim-installer-installation|
+  4. Usage .................................. |lvim-installer-usage|
+  5. Configuration .......................... |lvim-installer-config|
+  6. API .................................... |lvim-installer-api|
+  7. Ecosystem .............................. |lvim-installer-ecosystem|
+
+==============================================================================
+1. INTRODUCTION                                       *lvim-installer-intro*
+
+lvim-installer is the UI LAYER of the LVIM package ecosystem. It owns two
+things and delegates everything else to lvim-pkg:
+
+  1. The unified install PROMPT — when a filetype is opened for the first
+     time, it offers the LSP servers, debug adapters, linters, formatters and
+     treesitter parsers that filetype needs but lacks, as a tabbed checklist
+     grouped by category. Footer buttons install all / install only the
+     checked / cancel. A skipped package can be remembered as "declined" for
+     that filetype (persisted by lvim-pkg, never re-offered) or just snoozed.
+  2. The package manager WINDOW (`:LvimInstaller`) — a browsable UI to
+     install, update, remove and pin packages, parsers and plugins.
+
+lvim-installer only renders and orchestrates; all data resolution and the
+actual install / update / remove work is performed by lvim-pkg.
+
+==============================================================================
+2. WHAT IT MANAGES                                     *lvim-installer-tabs*
+
+One tab per installable type. The Mason packages are split by CATEGORY (the
+package's `categories` field in the Mason registry):
+
+  Tab          :LvimInstaller arg   Installs              Backend
+  LSP          lsp                  Language servers      mason
+  DAP          dap                  Debug adapters        mason
+  Linter       linter               Linters               mason
+  Formatter    formatter            Formatters            mason
+  Treesitter   parsers              Treesitter parsers    ts
+  Plugins      plugins              Neovim plugins        pack (vim.pack)
+
+The four Mason tabs share one engine (lvim-pkg's `mason` backend), which
+installs from source via npm / pypi / golang / cargo / github — no dependency
+on mason.nvim. Per item: Install, Update, Reinstall, Remove and Pin a version
+(or a git branch / tag / commit for plugins). Failures surface through the
+notification history with the real error, so installs are debuggable.
+
+==============================================================================
+3. INSTALLATION                                 *lvim-installer-installation*
+
+lvim-installer is the package-manager UI. With its two required foundations —
+lvim-pkg (engine) and lvim-utils (UI / notify) — the three are the BOOTSTRAP
+of the whole ecosystem: once they load, the manager installs everything else.
+Because the ecosystem IS the package manager (it installs plugins through the
+built-in |vim.pack|), no external plugin manager is needed.
+
+In your init.lua — load order matters (utils + pkg before installer): >lua
+  vim.pack.add({
+      "https://github.com/lvim-tech/lvim-utils",
+      "https://github.com/lvim-tech/lvim-pkg",
+      "https://github.com/lvim-tech/lvim-installer",
+  })
+  require("lvim-utils").setup()
+  require("lvim-pkg").setup()
+  require("lvim-installer").setup()
+<
+The optional domain plugins (lvim-ls, lvim-ts, lvim-lsp) are added the same
+way and feed the first-open prompt — they are NOT required for the manager.
+
+==============================================================================
+4. USAGE                                               *lvim-installer-usage*
+
+                                                          *:LvimInstaller*
+  :LvimInstaller                  open the manager (last tab)
+  :LvimInstaller lsp|dap|linter|formatter|parsers|plugins
+                                  open on a specific tab
+  :LvimInstaller update-registry [mason|ts|plugin|all]
+                                  refresh the catalogue(s) and re-run the
+                                  update checks, through the progress panel
+  :LvimInstaller snapshot [save]  open the snapshots tab, or save current state
+
+Lua: >lua
+  require("lvim-installer").open("LSP")  -- open the manager at a tab
+  require("lvim-installer").offer("go")  -- manually offer the prompt for a ft
+  require("lvim-installer").update_registry("mason")
+<
+==============================================================================
+5. CONFIGURATION                                      *lvim-installer-config*
+
+`setup(opts)` deep-merges into the live defaults (|LvimInstallerConfig|): >lua
+  require("lvim-installer").setup({
+      prompt = { title_icon = "󰏗 ", snooze_ms = 5 * 60 * 1000 },
+      ensure_installed = {},     -- Mason tools to install silently (allowlist)
+      update_concurrency = 4,    -- plugins updated at once during "Update all"
+      progress = { name = "Installer", icon = "󰏗", done_ttl = 4000, ... },
+      popup_global = { position = "editor", width = 0.8, height = "auto", ... },
+  })
+<
+  prompt              first-open prompt: title_icon, snooze_ms
+  ensure_installed    Mason tools to install silently at setup (allowlist)
+  update_concurrency  batch size for "Update all" of plugins
+  progress            install progress panel (name, icon, spinner, done_ttl)
+  popup_global        manager / prompt window: geometry, icons, labels, keys
+                      (passed verbatim to lvim-utils.ui.new())
+
+==============================================================================
+6. API                                                   *lvim-installer-api*
+
+  local installer = require("lvim-installer")
+
+  installer.setup(opts?)            register the prompt + :LvimInstaller cmd
+  installer.open(tab?)              open the manager at a tab
+                                    ("LSP"|"DAP"|"Linter"|"Formatter"|
+                                     "parser"|"plugin")
+  installer.offer(ft?)              offer the prompt for a filetype
+                                    (default: current buffer)
+  installer.update_registry(which?) refresh catalogues + update checks
+                                    (mason|ts|plugin|all; default all)
+
+==============================================================================
+7. ECOSYSTEM                                       *lvim-installer-ecosystem*
+
+  lvim-pkg     the engine (data + install operations)
+  lvim-utils   shared UI / notify
+  lvim-ls      LSP engine (supplies per-filetype tool requirements)
+  lvim-ts      treesitter runtime
+
+vim:tw=78:ts=8:noet:ft=help:norl:

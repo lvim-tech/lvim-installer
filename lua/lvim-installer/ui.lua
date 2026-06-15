@@ -11,21 +11,21 @@ local _instance = nil
 --- Returns nil when lvim-utils is unavailable.
 ---@return table|nil
 local function get()
-	if _instance then
-		return _instance
-	end
-	local ok, mod = pcall(require, "lvim-utils.ui")
-	if not ok then
-		return nil
-	end
-	_instance = mod.new(config.popup_global)
-	return _instance
+    if _instance then
+        return _instance
+    end
+    local ok, mod = pcall(require, "lvim-utils.ui")
+    if not ok then
+        return nil
+    end
+    _instance = mod.new(config.popup_global)
+    return _instance
 end
 
 --- Invalidate the cached instance so the next get() rebuilds it.
 ---@return nil
 local function reset()
-	_instance = nil
+    _instance = nil
 end
 
 return { get = get, reset = reset }
