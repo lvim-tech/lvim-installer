@@ -16,6 +16,8 @@ everything else to [lvim-pkg](https://github.com/lvim-tech/lvim-pkg):
 lvim-installer only renders and orchestrates; all data resolution and the actual
 install / update / remove work is performed by `lvim-pkg`.
 
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](https://github.com/lvim-tech/lvim-installer/blob/main/LICENSE)
+
 ## What it manages
 
 The manager has one tab per installable type. The Mason packages are split by
@@ -45,25 +47,48 @@ stderr), so installs are debuggable.
 
 lvim-installer is the package-manager **UI**. Together with its two required
 foundations — [lvim-pkg](https://github.com/lvim-tech/lvim-pkg) (engine) and
-[lvim-utils](https://github.com/lvim-tech/lvim-utils) (UI / notify) — these three
-are the **bootstrap of the whole ecosystem**: once they load, the manager installs
-and manages everything else.
+[lvim-utils](https://github.com/lvim-tech/lvim-utils) (UI / notify) — these three are
+the **bootstrap of the whole ecosystem**: once they load, the manager installs and
+manages everything else. Because the ecosystem *is* the package manager (it installs
+plugins through Neovim's built-in **`vim.pack`**), you do **not** need an external
+plugin manager — the **Native** method below is the recommended one.
 
-Because the ecosystem *is* the package manager (it installs plugins through
-Neovim's built-in **`vim.pack`**), you do **not** need an external plugin manager.
-Just clone the three with `vim.pack` and call their `setup()`.
+### LVIM IDE
 
-### Bootstrap (vim.pack)
-
-In your `init.lua`. `vim.pack.add` clones the three on first launch; the `setup()`
-calls bring the manager online. Load order matters — `lvim-utils` and `lvim-pkg`
-are independent and must come before `lvim-installer`, which requires both.
+Ships with LVIM IDE (which performs the bootstrap for you). Override its options in
+your user module (`lua/modules/user/init.lua`):
 
 ```lua
+modules["lvim-tech/lvim-installer"] = {
+    dependencies = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
+    opts = { ... },
+}
+```
+
+### lazy.nvim
+
+```lua
+return {
+    "lvim-tech/lvim-installer",
+    dependencies = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
+    config = function()
+        require("lvim-installer").setup({})
+    end,
+}
+```
+
+### Native (vim.pack / packadd) — recommended
+
+This is the whole package manager — no external plugin manager needed. Bootstrap the
+trio in order (`lvim-utils` and `lvim-pkg` are independent and must come before
+`lvim-installer`, which requires both); the installer then manages everything else.
+
+```lua
+-- In your init.lua. vim.pack.add clones the three on first launch.
 vim.pack.add({
-    "https://github.com/lvim-tech/lvim-utils",
-    "https://github.com/lvim-tech/lvim-pkg",
-    "https://github.com/lvim-tech/lvim-installer",
+    { src = "https://github.com/lvim-tech/lvim-utils" },
+    { src = "https://github.com/lvim-tech/lvim-pkg" },
+    { src = "https://github.com/lvim-tech/lvim-installer" },
 })
 
 require("lvim-utils").setup() -- UI / notify base
@@ -71,29 +96,31 @@ require("lvim-pkg").setup() -- install engine + plugin registry
 require("lvim-installer").setup() -- unified prompt + :LvimInstaller command
 ```
 
-That is the entire package manager. Open `:LvimInstaller` to install the rest —
-LSP servers, linters, formatters, debug adapters, parsers and plugins.
-
-The optional domain plugins ([lvim-ls](https://github.com/lvim-tech/lvim-ls),
+Then open `:LvimInstaller` to install the rest — LSP servers, linters, formatters,
+debug adapters, parsers and plugins. The optional domain plugins
+([lvim-ls](https://github.com/lvim-tech/lvim-ls),
 [lvim-ts](https://github.com/lvim-tech/lvim-ts),
-[lvim-lsp](https://github.com/lvim-tech/lvim-lsp)) are added the same way and feed
-the first-open prompt — they are **not** required for the manager itself.
+[lvim-lsp](https://github.com/lvim-tech/lvim-lsp)) are added the same way and feed the
+first-open prompt.
 
-> When lvim-installer is active, run `lvim-ts` with `auto_install = false` so
-> parsers are offered through the prompt instead of installing silently.
+> For a full distribution-style loader (lazy-loading, version snapshots, build hooks)
+> built on this bootstrap, see the `core/pack.lua` pattern in the LVIM IDE config: it
+> git-clones the trio on first run (so the first `vim.pack.add` does not reconcile the
+> whole lockfile), then drives per-plugin install / build through `:LvimInstaller`.
 
-### LVIM IDE
+> When lvim-installer is active, run `lvim-ts` with `auto_install = false` so parsers
+> are offered through the prompt instead of installing silently.
 
-lvim-installer ships with LVIM IDE (which performs the bootstrap above for you). To
-override its options, add to your user module (`lua/modules/user/init.lua`):
+### packer.nvim
 
 ```lua
-modules["lvim-tech/lvim-installer"] = {
-    dependencies = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
-    opts = {
-        -- see Configuration
-    },
-}
+use({
+    "lvim-tech/lvim-installer",
+    requires = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
+    config = function()
+        require("lvim-installer").setup({})
+    end,
+})
 ```
 
 ## Usage
