@@ -10,11 +10,20 @@
 ---@field progress     table   Progress channel appearance (name, icon, spinner, header_hl)
 ---@field update_concurrency integer  Plugins updated at once during "Update all"
 ---@field ensure_installed string[]  Mason tools to install silently at setup (allowlist)
+---@field browser     table   The Package Manager panel: `layout` = "area"|"float"|"bottom"
 
 ---@type LvimInstallerConfig
 return {
     -- Mason tools (LSP / DAP / linter / formatter) to install silently at setup.
     ensure_installed = {},
+    -- The Package Manager browser (the tabbed panel) — HOW it opens:
+    --   "area"   — the cmdline / minibuffer dock shared by the fzf pickers + LvimLsp nav (grows cmdheight,
+    --              chrome/heirline above; the toolbars are C-j/C-k header sectors). DEFAULT.
+    --   "float"  — a centred modal window.
+    --   "bottom" — a bottom dock floating over the last rows.
+    browser = {
+        layout = "area",
+    },
     prompt = {
         title_icon = "󰏗 ",
         snooze_ms = 5 * 60 * 1000,

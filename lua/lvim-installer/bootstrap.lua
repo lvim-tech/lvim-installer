@@ -320,7 +320,17 @@ function M.install(specs, opts)
     end
     local missing = missing_plugins(specs)
     if #missing == 0 then
-        vim.pack.add(specs, { load = false, confirm = false })
+        -- Nothing to install. `vim.pack.add` here only RECONCILES — it registers the specs with vim.pack for
+        -- later update / build management; it is NOT needed to load the plugins (the host packadd's them).
+        -- It costs ~25 ms over the full plugin set on EVERY start, so defer it off the hot startup path to
+        -- VeryLazy (the installer UI reads lvim-pkg's own registry, not vim.pack, so nothing waits on this).
+        vim.api.nvim_create_autocmd("User", {
+            pattern = "VeryLazy",
+            once = true,
+            callback = function()
+                pcall(vim.pack.add, specs, { load = false, confirm = false })
+            end,
+        })
         return
     end
     local nm = notify_mod()

@@ -825,6 +825,34 @@ local function wrap_value(text, width)
     return lines
 end
 
+--- A per-item action toolbar (shown under an expanded plugin / package): the actions as a centered ui.bar of
+--- buttons, each with a bracketed shortcut letter ([R]einstall …) and its own accent colour. `specs` =
+--- { { label, key, hl, run }, … }. Mirrors the tab toolbars so every button in the browser goes through ui.bar.
+---@param name string
+---@param specs table[]
+---@return table  a `type="bar"` child row
+local function item_action_bar(name, specs)
+    local items = {}
+    for _, s in ipairs(specs) do
+        items[#items + 1] = {
+            type = "button",
+            text = s.label,
+            key = s.key,
+            run = s.run,
+            style = {
+                text = {
+                    padding = { 1, 1 },
+                    normal = s.hl or "LvimInstallerToolbar", -- the button's own accent (inactive)
+                    active = s.hl or "LvimInstallerActive",
+                    hover = "LvimInstallerToolbarHover", -- the keyboard cursor
+                    hover_active = "LvimInstallerToolbarHoverActive", -- the cursor on the applied button
+                },
+            },
+        }
+    end
+    return { type = "bar", name = name, align = "center", child = true, items = items }
+end
+
 local function plugin_item_row(tab, item, w)
     local info = item.info
     local children = {}
@@ -903,47 +931,45 @@ local function plugin_item_row(tab, item, w)
             end
         end
     end
-    -- Per-plugin actions as one centered segmented bar. "Update" when an update is
-    -- available, otherwise "Reinstall" (re-sync to the pinned version + build).
-    -- Reinstall (re-pick version) and Update (advance) are both always available.
-    local actions = { "Reinstall", "Update", "Delete" }
-    if info.src and info.src ~= "-" and vim.ui.open then
-        actions[#actions + 1] = "Browse"
-    end
-    local primary = "Reinstall"
-    children[#children + 1] = {
-        type = "segmented",
-        name = "pa_" .. item.name,
-        child = true,
-        center = true,
-        label = "",
-        options = actions,
-        value = primary,
-        active_hl = "LvimInstallerActive",
-        -- Box the first letter of each button as the shortcut hint ([R]einstall …).
-        bracket_key = true,
-        option_hl = {
-            Update = "LvimInstallerActionInstall",
-            Reinstall = "LvimInstallerActionInstall",
-            Delete = "LvimInstallerActionRemove",
-            Browse = "LvimInstallerActionOpen",
-            Pin = "LvimInstallerActionHint",
-        },
-        run = function(value, _close, activated)
-            if not activated then
-                return
-            end
-            if value == "Delete" then
-                plugin_action(item.name, "delete")
-            elseif value == "Browse" then
-                plugin_action(item.name, "browse")
-            elseif value == "Update" then
-                plugin_action(item.name, "update")
-            else
+    -- Per-plugin actions as one centered ui.bar (Reinstall re-picks the version, Update advances; both always
+    -- available). The [X] shortcut letters mirror the global r/u/d/b keys.
+    local specs = {
+        {
+            label = "Reinstall",
+            key = "R",
+            hl = "LvimInstallerActionInstall",
+            run = function()
                 plugin_action(item.name, "reinstall")
-            end
-        end,
+            end,
+        },
+        {
+            label = "Update",
+            key = "U",
+            hl = "LvimInstallerActionInstall",
+            run = function()
+                plugin_action(item.name, "update")
+            end,
+        },
+        {
+            label = "Delete",
+            key = "D",
+            hl = "LvimInstallerActionRemove",
+            run = function()
+                plugin_action(item.name, "delete")
+            end,
+        },
     }
+    if info.src and info.src ~= "-" and vim.ui.open then
+        specs[#specs + 1] = {
+            label = "Browse",
+            key = "B",
+            hl = "LvimInstallerActionOpen",
+            run = function()
+                plugin_action(item.name, "browse")
+            end,
+        }
+    end
+    children[#children + 1] = item_action_bar("pa_" .. item.name, specs)
     local sicon, status_hl = plugin_style(info)
     local label = plugin_label(info, item.pin)
     return {
@@ -958,27 +984,39 @@ local function plugin_item_row(tab, item, w)
     }
 end
 
---- Rows for the Plugins tab: two centered segmented toolbar bars (filter modes,
---- actions), then Loaded / Lazy sections of expandable plugin rows.
----@param tab table
----@return table[]
-local function plugin_rows(tab)
-    local rows = {
-        {
-            type = "segmented",
-            name = "filter",
-            center = true,
-            label = "",
-            options = FILTER_MODES,
-            value = tab_mode(tab.id),
-            text_hl = "LvimInstallerToolbar",
-            active_hl = "LvimInstallerActive",
-            run = function(value, _close, activated)
-                state.filter_modes[tab.id] = value
-                if value == "Search" and activated then
-                    vim.ui.input({ prompt = "Search: ", default = tab_filter(tab.id) }, function(input)
+-- Toolbar button styling: the inactive name on the dim toolbar tint, the active / hover on the accent.
+---@return table
+local function bar_btn_style()
+    return {
+        text = {
+            padding = { 1, 1 },
+            normal = "LvimInstallerToolbar", -- inactive
+            active = "LvimInstallerActive", -- the applied filter / selected option
+            hover = "LvimInstallerToolbarHover", -- the keyboard cursor (on an inactive button)
+            hover_active = "LvimInstallerToolbarHoverActive", -- the cursor ON the applied button
+        },
+    }
+end
+
+--- The filter-mode bar for a tab — a `ui.bar` of buttons (one per FILTER_MODES entry, centered, chevrons on
+--- overflow). The active mode is highlighted; clicking a mode sets it + refreshes ("Search" prompts first).
+---@param tab_id string
+---@param modes? string[]  the filter labels (default FILTER_MODES — the plugin set)
+---@return table  a `type="bar"` row
+local function filter_bar(tab_id, modes)
+    local current = tab_mode(tab_id)
+    local items = {}
+    for _, mode in ipairs(modes or FILTER_MODES) do
+        items[#items + 1] = {
+            type = "button",
+            text = mode,
+            active = mode == current,
+            run = function()
+                state.filter_modes[tab_id] = mode
+                if mode == "Search" then
+                    vim.ui.input({ prompt = "Search: ", default = tab_filter(tab_id) }, function(input)
                         if input ~= nil then
-                            state.filters[tab.id] = input
+                            state.filters[tab_id] = input
                         end
                         M.refresh_open()
                     end)
@@ -986,27 +1024,44 @@ local function plugin_rows(tab)
                 end
                 M.refresh_open()
             end,
-        },
-        {
-            type = "segmented",
-            name = "actions",
-            center = true,
-            label = "",
-            options = { "Check for updates", "Update all" },
-            value = "Check for updates",
-            text_hl = "LvimInstallerToolbar",
-            active_hl = "LvimInstallerActive",
-            run = function(value, _close, activated)
-                if not activated then
-                    return
-                end
-                if value == "Update all" then
-                    M.update_all()
-                else
+            style = bar_btn_style(),
+        }
+    end
+    return { type = "bar", name = "filter", align = "center", items = items }
+end
+
+--- A generic centered action bar: `{ { label, fn }, … }` → a `type="bar"` row of clickable buttons.
+---@param specs table[]
+---@return table
+local function action_bar(specs)
+    local items = {}
+    for _, s in ipairs(specs) do
+        items[#items + 1] = { type = "button", text = s[1], run = s[2], style = bar_btn_style() }
+    end
+    return { type = "bar", name = "actions", align = "center", items = items }
+end
+
+--- Rows for the Plugins tab: the filter + action toolbars (centered ui.bar button bars), then Loaded / Lazy
+--- sections of expandable plugin rows.
+---@param tab table
+---@return table[]
+local function plugin_rows(tab)
+    local rows = {
+        filter_bar(tab.id),
+        action_bar({
+            {
+                "Check for updates",
+                function()
                     require("lvim-installer").update_registry("plugin")
-                end
-            end,
-        },
+                end,
+            },
+            {
+                "Update all",
+                function()
+                    M.update_all()
+                end,
+            },
+        }),
         { type = "spacer", name = "tb_gap", label = "" },
     }
 
@@ -1252,51 +1307,58 @@ local function mason_item_row(tab, item, w)
             }
         end
     end
-    -- Action bar mirrors the Plugins tab. Reinstall = pick a version; Update = jump to
-    -- the latest. (No icons; the [X] shortcut letters carry the hint.)
-    local actions, primary
+    -- Action bar mirrors the Plugins tab — a centered ui.bar; the [X] shortcut letters carry the hint.
+    local specs
     if item.installed then
-        actions, primary = { "Reinstall", "Update", "Delete" }, "Reinstall"
+        specs = {
+            {
+                label = "Reinstall",
+                key = "R",
+                hl = "LvimInstallerActionInstall",
+                run = function()
+                    mason_action(item.name, "reinstall")
+                end,
+            },
+            {
+                label = "Update",
+                key = "U",
+                hl = "LvimInstallerActionInstall",
+                run = function()
+                    mason_action(item.name, "update")
+                end,
+            },
+            {
+                label = "Delete",
+                key = "D",
+                hl = "LvimInstallerActionRemove",
+                run = function()
+                    mason_action(item.name, "delete")
+                end,
+            },
+        }
     else
-        actions, primary = { "Install" }, "Install"
+        specs = {
+            {
+                label = "Install",
+                key = "I",
+                hl = "LvimInstallerActionInstall",
+                run = function()
+                    mason_action(item.name, "install")
+                end,
+            },
+        }
     end
     if mason_homepage(item.name) and vim.ui.open then
-        actions[#actions + 1] = "Browse"
-    end
-    children[#children + 1] = {
-        type = "segmented",
-        name = "ma_" .. item.name,
-        child = true,
-        center = true,
-        label = "",
-        options = actions,
-        value = primary,
-        active_hl = "LvimInstallerActive",
-        bracket_key = true,
-        option_hl = {
-            Install = "LvimInstallerActionInstall",
-            Reinstall = "LvimInstallerActionInstall",
-            Update = "LvimInstallerActionInstall",
-            Delete = "LvimInstallerActionRemove",
-            Browse = "LvimInstallerActionOpen",
-        },
-        run = function(value, _close, activated)
-            if not activated then
-                return
-            end
-            if value == "Delete" then
-                mason_action(item.name, "delete")
-            elseif value == "Browse" then
+        specs[#specs + 1] = {
+            label = "Browse",
+            key = "B",
+            hl = "LvimInstallerActionOpen",
+            run = function()
                 mason_action(item.name, "browse")
-            elseif value == "Update" then
-                mason_action(item.name, "update")
-            elseif value == "Install" then
-                mason_action(item.name, "install")
-            else
-                mason_action(item.name, "reinstall")
-            end
-        end,
-    }
+            end,
+        }
+    end
+    children[#children + 1] = item_action_bar("ma_" .. item.name, specs)
     -- Update indicator: installed version differs from the registry's latest.
     local latest = mason_latest(item.spec)
     local outdated = mason_outdated(item)
@@ -1329,45 +1391,19 @@ end
 ---@return table[]
 local function mason_rows(tab)
     local rows = {
-        {
-            type = "segmented",
-            name = "filter",
-            center = true,
-            label = "",
-            options = { "All", "Installed", "Available", "Outdated", "Up-to-date", "Search" },
-            value = tab_mode(tab.id),
-            text_hl = "LvimInstallerToolbar",
-            active_hl = "LvimInstallerActive",
-            run = function(value, _close, activated)
-                state.filter_modes[tab.id] = value
-                if value == "Search" and activated then
-                    vim.ui.input({ prompt = "Search: ", default = tab_filter(tab.id) }, function(input)
-                        if input ~= nil then
-                            state.filters[tab.id] = input
-                        end
-                        M.refresh_open()
-                    end)
-                    return
-                end
-                M.refresh_open()
-            end,
-        },
-        {
-            type = "segmented",
-            name = "actions",
-            center = true,
-            label = "",
-            options = { "Check for updates", "Update all" },
-            value = "Check for updates",
-            text_hl = "LvimInstallerToolbar",
-            active_hl = "LvimInstallerActive",
-            run = function(value, _close, activated)
-                if not activated then
-                    return
-                end
-                if value == "Update all" then
-                    -- Skip explicitly-pinned packages: a pin means "hold this version",
-                    -- so a bulk update must not touch it (use the per-package Update for that).
+        filter_bar(tab.id, { "All", "Installed", "Available", "Outdated", "Up-to-date", "Search" }),
+        action_bar({
+            {
+                "Check for updates",
+                function()
+                    require("lvim-installer").update_registry("mason")
+                end,
+            },
+            {
+                "Update all",
+                function()
+                    -- Skip explicitly-pinned packages: a pin means "hold this version", so a bulk update must
+                    -- not touch it (use the per-package Update for that).
                     local outdated = {}
                     for _, it in ipairs(build_items(tab)) do
                         if mason_outdated(it) and not pkg.get_pin("mason", it.name) then
@@ -1383,11 +1419,9 @@ local function mason_rows(tab)
                         vim.notify(("lvim-installer: updated %d package(s)"):format(#outdated))
                         M.refresh_open()
                     end)
-                else
-                    require("lvim-installer").update_registry("mason")
-                end
-            end,
-        },
+                end,
+            },
+        }),
         { type = "spacer", name = "mtb_gap", label = "" },
     }
     local items = build_items(tab)
@@ -1510,29 +1544,39 @@ local function parser_item_row(tab, item, w)
             }
         end
     end
-    local actions = item.installed and { "Update", "Delete" } or { "Install" }
-    children[#children + 1] = {
-        type = "segmented",
-        name = "ta_" .. item.name,
-        child = true,
-        center = true,
-        label = "",
-        options = actions,
-        value = actions[1],
-        active_hl = "LvimInstallerActive",
-        bracket_key = true,
-        option_hl = {
-            Install = "LvimInstallerActionInstall",
-            Update = "LvimInstallerActionInstall",
-            Delete = "LvimInstallerActionRemove",
-        },
-        run = function(value, _close, activated)
-            if not activated then
-                return
-            end
-            parser_action(item.name, value == "Delete" and "delete" or "install")
-        end,
-    }
+    local specs
+    if item.installed then
+        specs = {
+            {
+                label = "Update",
+                key = "U",
+                hl = "LvimInstallerActionInstall",
+                run = function()
+                    parser_action(item.name, "install")
+                end,
+            },
+            {
+                label = "Delete",
+                key = "D",
+                hl = "LvimInstallerActionRemove",
+                run = function()
+                    parser_action(item.name, "delete")
+                end,
+            },
+        }
+    else
+        specs = {
+            {
+                label = "Install",
+                key = "I",
+                hl = "LvimInstallerActionInstall",
+                run = function()
+                    parser_action(item.name, "install")
+                end,
+            },
+        }
+    end
+    children[#children + 1] = item_action_bar("ta_" .. item.name, specs)
     local sicon = item.installed and "\xe2\x97\x8f" or "\xe2\x97\x8b" -- ● / ○
     local status_hl = (not item.installed and "LvimInstallerStatusLazy")
         or (item.outdated and "LvimInstallerStatusOutdated")
@@ -1555,20 +1599,17 @@ end
 ---@return table[]
 local function parser_rows(tab)
     local rows = {
-        {
-            type = "segmented",
-            name = "ts_update_bar",
-            center = true,
-            label = "",
-            options = { "Check for updates", "Update outdated" },
-            value = "Check for updates",
-            text_hl = "LvimInstallerToolbar",
-            active_hl = "LvimInstallerActive",
-            run = function(value, _close, activated)
-                if not activated then
-                    return
-                end
-                if value == "Update outdated" then
+        filter_bar(tab.id, { "All", "Installed", "Available", "Outdated", "Up-to-date", "Search" }),
+        action_bar({
+            {
+                "Check for updates",
+                function()
+                    require("lvim-installer").update_registry("ts")
+                end,
+            },
+            {
+                "Update outdated",
+                function()
                     local function collect()
                         local names = {}
                         for _, it in ipairs(build_items(tab)) do
@@ -1600,36 +1641,10 @@ local function parser_rows(tab)
                             do_update(collect())
                         end)
                     end
-                else
-                    require("lvim-installer").update_registry("ts")
-                end
-            end,
-        },
+                end,
+            },
+        }),
         { type = "spacer", name = "ts_tb_gap", label = "" },
-        {
-            type = "segmented",
-            name = "filter",
-            center = true,
-            label = "",
-            options = { "All", "Installed", "Available", "Outdated", "Up-to-date", "Search" },
-            value = tab_mode(tab.id),
-            text_hl = "LvimInstallerToolbar",
-            active_hl = "LvimInstallerActive",
-            run = function(value, _close, activated)
-                state.filter_modes[tab.id] = value
-                if value == "Search" and activated then
-                    vim.ui.input({ prompt = "Search: ", default = tab_filter(tab.id) }, function(input)
-                        if input ~= nil then
-                            state.filters[tab.id] = input
-                        end
-                        M.refresh_open()
-                    end)
-                    return
-                end
-                M.refresh_open()
-            end,
-        },
-        { type = "spacer", name = "ttb_gap", label = "" },
     }
     local items = build_items(tab)
     local mode = tab_mode(tab.id)
@@ -1769,9 +1784,15 @@ end
 --- Open (or re-open) the package manager window.
 ---@param tab_id? string  Initial tab id (e.g. "LSP", "parser", "plugin")
 ---@return nil
-function M.open(tab_id)
+--- Open the package-manager browser.
+---@param tab_id? string  the tab to open at
+---@param layout? string  "area"|"float"|"bottom" — overrides config.browser.layout for the session
+function M.open(tab_id, layout)
     if tab_id then
         state.active = tab_id
+    end
+    if layout then
+        state.layout = layout -- sticky: a per-command override survives pending re-opens this session
     end
     local ui = ui_mod.get()
     if not ui then
@@ -1792,6 +1813,10 @@ function M.open(tab_id)
     state.handle = ui.tabs({
         title = "Package Manager",
         tabs = tabs,
+        -- How the panel opens: a per-command override (`:LvimInstaller float`) → `config.browser.layout` →
+        -- "area". "area" = the cmdline/minibuffer dock shared by the fzf pickers + LvimLsp nav; "float" = a
+        -- centred modal; "bottom" = a bottom dock.
+        layout = state.layout or (config.browser or {}).layout or "area",
         tab_selector = sel,
         -- Tabs are managed only from the header (press "t"); content keys never jump
         -- to or switch tabs.

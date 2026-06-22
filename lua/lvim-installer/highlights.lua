@@ -16,8 +16,14 @@ local M = {}
 local function build()
     local c = colors
     return {
-        -- Toolbar (Filter / Check for updates / Update all)
-        LvimInstallerToolbar = { fg = c.blue },
+        -- Toolbar buttons — THREE distinct states: INACTIVE (dim, not selected), HOVER (the keyboard cursor),
+        -- ACTIVE (the applied button; set below). Picker-style hierarchy.
+        -- The LvimLsp diagnostics "Workspace" (scope) button style — a BLUE family: dim-blue inactive,
+        -- blue-bold active AND hover (the cursor = the accent, like the scope button), and the cursor ON the
+        -- active button on a subtle 0.3 BLUE BG TINT.
+        LvimInstallerToolbar = { fg = c.blend(c.blue, c.bg, 0.6) }, -- inactive: dim blue (mtint blue 0.6)
+        LvimInstallerToolbarHover = { fg = c.blue, bold = true }, -- hover: blue bold (the cursor = the accent)
+        LvimInstallerToolbarHoverActive = { fg = c.blue, bg = c.blend(c.blue, c.bg, 0.3), bold = true },
         LvimInstallerToolbarIcon = { fg = c.orange },
         -- Section headers ("Loaded (n)" / "Lazy (n)")
         LvimInstallerSection = { fg = c.blue },
@@ -52,8 +58,9 @@ local function build()
         LvimInstallerActionRemove = { fg = c.red },
         LvimInstallerActionOpen = { fg = c.blue },
         LvimInstallerActionHint = { fg = c.cyan },
-        -- Active segmented option (bold everywhere)
-        LvimInstallerActive = { bold = true },
+        -- Active toolbar button (the APPLIED filter / selected option): blue + bold — the Workspace-button
+        -- accent (same hue as the dim inactive + the hover cursor).
+        LvimInstallerActive = { fg = c.blue, bold = true },
         -- A plugin row while it is updating / reinstalling
         LvimInstallerProgress = { fg = c.red },
     }

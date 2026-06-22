@@ -70,7 +70,18 @@ function M.setup(opts)
             parsers = "parser",
             plugins = "plugin",
         }
-        M.open(map[args[1]] or nil)
+        -- A `float`/`area`/`bottom` token (anywhere in the args) overrides the open layout; the other token is
+        -- the tab. So `:LvimInstaller float`, `:LvimInstaller plugins float`, `:LvimInstaller float lsp` all work.
+        local layouts = { float = true, area = true, bottom = true }
+        local tab, layout
+        for _, a in ipairs(args) do
+            if layouts[a] then
+                layout = a
+            elseif map[a] then
+                tab = map[a]
+            end
+        end
+        M.open(tab, layout)
     end, {
         nargs = "*",
         complete = function(arglead, line)
@@ -86,9 +97,21 @@ function M.setup(opts)
             if words[2] == "snapshot" then
                 return starts({ "save" })
             end
-            return starts({ "lsp", "dap", "linter", "formatter", "parsers", "plugins", "snapshot", "update-registry" })
+            return starts({
+                "lsp",
+                "dap",
+                "linter",
+                "formatter",
+                "parsers",
+                "plugins",
+                "float",
+                "area",
+                "bottom",
+                "snapshot",
+                "update-registry",
+            })
         end,
-        desc = "Open the lvim package manager / snapshot / update-registry [mason|ts|plugin|all]",
+        desc = "Open the lvim package manager [tab] [float|area|bottom] / snapshot / update-registry",
     })
 
     -- ensure_installed: silently install the configured Mason tools (allowlist) at setup.
@@ -205,8 +228,11 @@ end
 --- Open the package manager window at a specific tab.
 ---@param tab? "LSP"|"DAP"|"Linter"|"Formatter"|"parser"|"plugin"  Initial tab
 ---@return nil
-function M.open(tab)
-    browser.open(tab)
+--- Open the package manager.
+---@param tab? string     the tab to open at (e.g. "plugin", "LSP")
+---@param layout? string  "area"|"float"|"bottom" — overrides config.browser.layout for the session
+function M.open(tab, layout)
+    browser.open(tab, layout)
 end
 
 return M
