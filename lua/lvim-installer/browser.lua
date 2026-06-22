@@ -14,6 +14,7 @@ local pkg_paths = require("lvim-pkg.paths")
 local config = require("lvim-installer.config")
 local progress = require("lvim-installer.progress")
 local ui_mod = require("lvim-installer.ui")
+local ui_filters = require("lvim-utils.ui.filters")
 local M = {}
 
 --- Tab definitions.  Mason tabs filter the registry by category; parser/plugin
@@ -189,8 +190,13 @@ local FILTER_MODES = { "All", "Loaded", "Lazy", "Deps", "Outdated", "Up-to-date"
 ---@param item   table
 ---@param tab_id string
 ---@return boolean
-local function passes_filter(item, tab_id)
-    local mode = tab_mode(tab_id)
+--- Whether a plugin item matches a SPECIFIC filter mode (independent of the current mode) — shared by the
+--- live filter-bar counts and `passes_filter` below.
+---@param item table
+---@param mode string
+---@param tab_id string
+---@return boolean
+local function plugin_match(item, mode, tab_id)
     local info = item.info
     if mode == "Loaded" then
         return info.loaded == true
@@ -207,6 +213,33 @@ local function passes_filter(item, tab_id)
         return f == "" or item.name:lower():find(f, 1, true) ~= nil
     end
     return true
+end
+
+local function passes_filter(item, tab_id)
+    return plugin_match(item, tab_mode(tab_id), tab_id)
+end
+
+--- Whether a mason / parser item matches a SPECIFIC filter mode — shared by both tabs (same modes); the only
+--- difference is how "outdated" is computed, passed as `is_outdated`. Drives the filter-bar counts + filtering.
+---@param item table
+---@param mode string
+---@param tab_id string
+---@param is_outdated fun(item): boolean
+---@return boolean
+local function pkg_match(item, mode, tab_id, is_outdated)
+    if mode == "Installed" then
+        return item.installed == true
+    elseif mode == "Available" then
+        return not item.installed
+    elseif mode == "Outdated" then
+        return is_outdated(item) == true
+    elseif mode == "Up-to-date" then
+        return item.installed and not is_outdated(item)
+    elseif mode == "Search" then
+        local f = tab_filter(tab_id):lower()
+        return f == "" or item.name:lower():find(f, 1, true) ~= nil
+    end
+    return true -- All
 end
 
 --- Detail fields for a plugin as { field, value } pairs (rendered as inline rows).
@@ -1003,31 +1036,45 @@ end
 ---@param tab_id string
 ---@param modes? string[]  the filter labels (default FILTER_MODES — the plugin set)
 ---@return table  a `type="bar"` row
-local function filter_bar(tab_id, modes)
-    local current = tab_mode(tab_id)
-    local items = {}
+--- The filter bar — built through the SHARED filter-group model (lvim-utils.ui.filters), identical to the
+--- picker's. Optional `items` + `match(item, mode)` drive a live per-mode COUNT. Activation sets the mode and
+--- refreshes ("Search" prompts first).
+---@param tab_id string
+---@param modes? string[]
+---@param items? table[]            the tab's items (for the counts)
+---@param match? fun(item, mode): boolean
+---@return table  a `type="bar"` row
+local function filter_bar(tab_id, modes, items, match)
+    local buttons = {}
     for _, mode in ipairs(modes or FILTER_MODES) do
-        items[#items + 1] = {
-            type = "button",
-            text = mode,
-            active = mode == current,
-            run = function()
-                state.filter_modes[tab_id] = mode
-                if mode == "Search" then
-                    vim.ui.input({ prompt = "Search: ", default = tab_filter(tab_id) }, function(input)
-                        if input ~= nil then
-                            state.filters[tab_id] = input
-                        end
-                        M.refresh_open()
-                    end)
-                    return
-                end
-                M.refresh_open()
-            end,
-            style = bar_btn_style(),
-        }
+        buttons[#buttons + 1] = { id = mode, label = mode, hl_hover_active = "LvimInstallerToolbarHoverActive" }
     end
-    return { type = "bar", name = "filter", align = "center", items = items }
+    local fb = ui_filters.bar({ { id = "mode", active = tab_mode(tab_id), buttons = buttons } }, {
+        count = (items and match) and function(_, b)
+            local n = 0
+            for _, it in ipairs(items) do
+                if match(it, b.id) then
+                    n = n + 1
+                end
+            end
+            return n
+        end or nil,
+        on_select = function(_, id)
+            state.filter_modes[tab_id] = id
+            if id == "Search" then
+                vim.ui.input({ prompt = "Search: ", default = tab_filter(tab_id) }, function(input)
+                    if input ~= nil then
+                        state.filters[tab_id] = input
+                    end
+                    M.refresh_open()
+                end)
+                return
+            end
+            M.refresh_open()
+        end,
+        accents = { active = "LvimInstallerActive", inactive = "LvimInstallerToolbar" },
+    })
+    return { type = "bar", name = "filter", align = "center", items = fb.band.items }
 end
 
 --- A generic centered action bar: `{ { label, fn }, … }` → a `type="bar"` row of clickable buttons.
@@ -1046,8 +1093,11 @@ end
 ---@param tab table
 ---@return table[]
 local function plugin_rows(tab)
+    local items = build_items(tab)
     local rows = {
-        filter_bar(tab.id),
+        filter_bar(tab.id, FILTER_MODES, items, function(it, m)
+            return plugin_match(it, m, tab.id)
+        end),
         action_bar({
             {
                 "Check for updates",
@@ -1074,13 +1124,15 @@ local function plugin_rows(tab)
             end
         end)
     end
-    local items = build_items(tab)
     local loaded_items, lazy_items = {}, {}
     for _, item in ipairs(items) do
         if passes_filter(item, tab.id) then
             table.insert(item.loaded and loaded_items or lazy_items, item)
         end
     end
+    -- the title counter (visible / total) for this tab
+    state.tab_counts = state.tab_counts or {}
+    state.tab_counts[tab.id] = { current = #loaded_items + #lazy_items, total = #items }
 
     -- Name column = longest name IN THE SECTION, so the second column (load time /
     -- update) sits exactly 5 past it — same rule across all tabs.
@@ -1390,8 +1442,16 @@ end
 ---@param tab table
 ---@return table[]
 local function mason_rows(tab)
+    local items = build_items(tab)
     local rows = {
-        filter_bar(tab.id, { "All", "Installed", "Available", "Outdated", "Up-to-date", "Search" }),
+        filter_bar(
+            tab.id,
+            { "All", "Installed", "Available", "Outdated", "Up-to-date", "Search" },
+            items,
+            function(it, m)
+                return pkg_match(it, m, tab.id, mason_outdated)
+            end
+        ),
         action_bar({
             {
                 "Check for updates",
@@ -1424,21 +1484,15 @@ local function mason_rows(tab)
         }),
         { type = "spacer", name = "mtb_gap", label = "" },
     }
-    local items = build_items(tab)
     local mode = tab_mode(tab.id)
-    local fl = tab_filter(tab.id):lower()
     local installed, available = {}, {}
     for _, item in ipairs(items) do
-        local pass = (mode == "All")
-            or (mode == "Installed" and item.installed)
-            or (mode == "Available" and not item.installed)
-            or (mode == "Outdated" and mason_outdated(item))
-            or (mode == "Up-to-date" and item.installed and not mason_outdated(item))
-            or (mode == "Search" and (fl == "" or item.name:lower():find(fl, 1, true) ~= nil))
-        if pass then
+        if pkg_match(item, mode, tab.id, mason_outdated) then
             table.insert(item.installed and installed or available, item)
         end
     end
+    state.tab_counts = state.tab_counts or {}
+    state.tab_counts[tab.id] = { current = #installed + #available, total = #items }
     local function section(name, label, list)
         -- Name column = longest name IN THIS SECTION, so the second column sits
         -- exactly 5 past it (a long item in the other section never pushes it).
@@ -1598,8 +1652,19 @@ end
 ---@param tab table
 ---@return table[]
 local function parser_rows(tab)
+    local items = build_items(tab)
+    local function outd(x)
+        return x.outdated
+    end
     local rows = {
-        filter_bar(tab.id, { "All", "Installed", "Available", "Outdated", "Up-to-date", "Search" }),
+        filter_bar(
+            tab.id,
+            { "All", "Installed", "Available", "Outdated", "Up-to-date", "Search" },
+            items,
+            function(it, m)
+                return pkg_match(it, m, tab.id, outd)
+            end
+        ),
         action_bar({
             {
                 "Check for updates",
@@ -1646,21 +1711,15 @@ local function parser_rows(tab)
         }),
         { type = "spacer", name = "ts_tb_gap", label = "" },
     }
-    local items = build_items(tab)
     local mode = tab_mode(tab.id)
-    local fl = tab_filter(tab.id):lower()
     local installed, available = {}, {}
     for _, item in ipairs(items) do
-        local pass = (mode == "All")
-            or (mode == "Installed" and item.installed)
-            or (mode == "Available" and not item.installed)
-            or (mode == "Outdated" and item.outdated)
-            or (mode == "Up-to-date" and item.installed and not item.outdated)
-            or (mode == "Search" and (fl == "" or item.name:lower():find(fl, 1, true) ~= nil))
-        if pass then
+        if pkg_match(item, mode, tab.id, outd) then
             table.insert(item.installed and installed or available, item)
         end
     end
+    state.tab_counts = state.tab_counts or {}
+    state.tab_counts[tab.id] = { current = #installed + #available, total = #items }
     local function section(name, label, list)
         -- Name column = longest name IN THIS SECTION, so the second column sits
         -- exactly 5 past it (a long item in the other section never pushes it).
@@ -1812,6 +1871,11 @@ function M.open(tab_id, layout)
     state.tabs = tabs
     state.handle = ui.tabs({
         title = "Package Manager",
+        -- The title counter (visible / total for the active tab) — the picker's title_counter equivalent,
+        -- shown on the statusline overlay; populated by the row builders into state.tab_counts.
+        title_count = function()
+            return (state.tab_counts or {})[state.active]
+        end,
         tabs = tabs,
         -- How the panel opens: a per-command override (`:LvimInstaller float`) → `config.browser.layout` →
         -- "area". "area" = the cmdline/minibuffer dock shared by the fzf pickers + LvimLsp nav; "float" = a
