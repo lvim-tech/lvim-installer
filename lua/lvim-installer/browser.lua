@@ -134,6 +134,11 @@ local function plugin_label(info, pin)
     if info.loaded and info.time_ms then
         parts[#parts + 1] = string.format("%.2f ms", info.time_ms)
     end
+    if info.dir then
+        -- a LOCAL dev clone (dir=): no git remote, so it is skipped by the update check — flag it so the
+        -- panel total (incl. these) vs the "Check for updates" count (git-managed only) is self-explanatory.
+        parts[#parts + 1] = "󰌹 local"
+    end
     if info.dependency then
         parts[#parts + 1] = "dep"
     end
