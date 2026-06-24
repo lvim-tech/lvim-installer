@@ -31,13 +31,20 @@ function M.setup(opts)
         desc = "Offer missing LSP/parser installs (unified prompt)",
         group = vim.api.nvim_create_augroup("lvim_installer", { clear = true }),
         callback = function(args)
+            -- Only a REAL, editable file buffer the user actually opened — never a scratch / preview /
+            -- terminal buffer. A finder PREVIEW sets a real `filetype` for syntax but is `buftype = "nofile"`;
+            -- it must not be treated as an opened file, so it must not trigger the install prompt. `buftype
+            -- == ""` is exactly "a normal file buffer" (every special buffer has a non-empty buftype).
+            if vim.bo[args.buf].buftype ~= "" then
+                return
+            end
             prompt.offer(vim.bo[args.buf].filetype)
         end,
     })
 
-    -- Cover buffers already loaded before the autocmd was registered.
+    -- Cover buffers already loaded before the autocmd was registered (real file buffers only — see above).
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-        if vim.api.nvim_buf_is_loaded(buf) then
+        if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buftype == "" then
             local ft = vim.bo[buf].filetype
             if ft ~= "" then
                 prompt.offer(ft)
