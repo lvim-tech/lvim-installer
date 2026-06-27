@@ -26,29 +26,47 @@ function M.setup(opts)
     -- Register the named highlight groups (theme-overridable, default-linked).
     highlights.setup()
 
-    -- Offer missing installs (LSP tools + parsers) when a filetype is first seen.
-    vim.api.nvim_create_autocmd("FileType", {
+    -- Offer missing installs (LSP tools + parsers) only when a REAL file buffer is shown to the user IN A REAL
+    -- WINDOW. "Real" = a normal file buffer (`buftype == ""`; every scratch / preview / terminal buffer has a
+    -- non-empty buftype) that is displayed in a NON-preview window. A finder PREVIEW that shows the actual file
+    -- buffer (the qf/loc browser's EDITABLE preview is the real buffer, so `buftype == ""` too) lives in a
+    -- `previewwindow` — it must NOT prompt; the offer is for files the user actually opened to edit. The window
+    -- test is deferred one tick so the buffer has settled into its window(s): a `FileType` during the preview's
+    -- `bufload` fires BEFORE its `win_set_buf`, so a synchronous check would miss the preview window.
+    local function maybe_offer(buf)
+        if not (buf and vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype == "") then
+            return
+        end
+        local ft = vim.bo[buf].filetype
+        if ft == "" then
+            return
+        end
+        vim.schedule(function()
+            if not vim.api.nvim_buf_is_valid(buf) then
+                return
+            end
+            for _, w in ipairs(vim.fn.win_findbuf(buf)) do
+                if not vim.wo[w].previewwindow then
+                    prompt.offer(ft) -- shown in a real window → a file the user opened (offer is deduped + snoozed)
+                    return
+                end
+            end
+        end)
+    end
+    -- FileType covers a fresh open; BufWinEnter covers opening a file the preview already loaded (no new
+    -- FileType then). `prompt.offer` dedupes by filetype, so the two triggers can't double-prompt.
+    vim.api.nvim_create_autocmd({ "FileType", "BufWinEnter" }, {
         desc = "Offer missing LSP/parser installs (unified prompt)",
         group = vim.api.nvim_create_augroup("lvim_installer", { clear = true }),
         callback = function(args)
-            -- Only a REAL, editable file buffer the user actually opened — never a scratch / preview /
-            -- terminal buffer. A finder PREVIEW sets a real `filetype` for syntax but is `buftype = "nofile"`;
-            -- it must not be treated as an opened file, so it must not trigger the install prompt. `buftype
-            -- == ""` is exactly "a normal file buffer" (every special buffer has a non-empty buftype).
-            if vim.bo[args.buf].buftype ~= "" then
-                return
-            end
-            prompt.offer(vim.bo[args.buf].filetype)
+            maybe_offer(args.buf)
         end,
     })
 
-    -- Cover buffers already loaded before the autocmd was registered (real file buffers only — see above).
+    -- Cover buffers already loaded + shown before the autocmd was registered (real file buffers only — above).
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-        if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buftype == "" then
-            local ft = vim.bo[buf].filetype
-            if ft ~= "" then
-                prompt.offer(ft)
-            end
+        if vim.api.nvim_buf_is_loaded(buf) then
+            maybe_offer(buf)
         end
     end
 
