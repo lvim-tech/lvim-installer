@@ -6,7 +6,7 @@
 
 ---@class LvimInstallerConfig
 ---@field popup_global table   Passed verbatim to lvim-utils.ui.new()
----@field prompt       table   Unified prompt appearance (title_icon, snooze_ms)
+---@field prompt       table   Unified prompt appearance (title_icon, snooze_ms, width)
 ---@field progress     table   Progress channel appearance (name, icon, spinner, header_hl)
 ---@field update_concurrency integer  Plugins updated at once during "Update all"
 ---@field ensure_installed string[]  Mason tools to install silently at setup (allowlist)
@@ -24,6 +24,7 @@ return {
     --   "bottom" — a bottom dock floating over the last rows.
     browser = {
         layout = "float",
+        width = 0.9, -- (float layout) fraction of the screen wide
         -- (area layout) the docked content-row budget — it scrolls past this. ~30% taller than ui.tabs' own
         -- default of 16 rows, since this is a full browser rather than a small prompt.
         height = 21,
@@ -41,6 +42,7 @@ return {
     prompt = {
         title_icon = "󰏗 ",
         snooze_ms = 5 * 60 * 1000,
+        width = 0.9, -- fraction of the screen wide for BOTH prompt popups (the install offer + the "skipped" decline)
     },
     -- How many plugins to update at once during "Update all" (vim.pack has no
     -- concurrency option, so updates run in sequential batches of this size).

@@ -1923,8 +1923,8 @@ function M.open(tab_id, layout)
         -- The bottom key-hint LEGEND (panel keys • focused-row keys), same as the control center.
         footer_hints = true,
         -- Use most of the screen — this is a full browser, not a small prompt.
-        width = 0.9,
-        max_width = 0.9,
+        width = config.browser.width,
+        max_width = config.browser.width,
         height = 0.9,
         max_height = 0.9,
         -- The frame defaults to TOP/RIGHT/LEFT borders only; add a BOTTOM edge (" ") so the content gets a

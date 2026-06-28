@@ -143,6 +143,7 @@ function M.show(ft)
     ui.tabs({
         title = config.prompt.title_icon .. "Install for " .. ft,
         tabs = tabs,
+        width = config.prompt.width,
         -- Footer shows only these action buttons, in order (no default nav hints).
         footer_hints = {
             { key = "a", label = "All" },
@@ -187,6 +188,7 @@ function M.ask_decline(ft, skipped)
     ui.select({
         title = config.prompt.title_icon .. "Skipped for " .. ft,
         subtitle = table.concat(names, ", "),
+        width = config.prompt.width,
         items = { "Don't ask again", "Ask later" },
         callback = function(confirmed, index)
             if confirmed and index == 1 then
