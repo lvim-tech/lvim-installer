@@ -11,21 +11,32 @@
 ---@field update_concurrency integer  Plugins updated at once during "Update all"
 ---@field ensure_installed string[]  Mason tools to install silently at setup (allowlist)
 ---@field browser     table   The Package Manager panel: `layout` = "area"|"float"|"bottom"
+---@field tab_icons   table<string,string>  Browser tab-bar icons keyed by tab id (Nerd Font glyphs)
 
 ---@type LvimInstallerConfig
 return {
     -- Mason tools (LSP / DAP / linter / formatter) to install silently at setup.
     ensure_installed = {},
     -- The Package Manager browser (the tabbed panel) — HOW it opens:
+    --   "float"  — a centred modal window (width 0.9 of the screen). DEFAULT.
     --   "area"   — the cmdline / minibuffer dock shared by the fzf pickers + LvimLsp nav (grows cmdheight,
-    --              chrome/heirline above; the toolbars are C-j/C-k header sectors). DEFAULT.
-    --   "float"  — a centred modal window.
+    --              chrome/heirline above; the toolbars are C-j/C-k header sectors).
     --   "bottom" — a bottom dock floating over the last rows.
     browser = {
-        layout = "area",
+        layout = "float",
         -- (area layout) the docked content-row budget — it scrolls past this. ~30% taller than ui.tabs' own
         -- default of 16 rows, since this is a full browser rather than a small prompt.
         height = 21,
+    },
+    -- Browser tab-bar icons, keyed by tab id. Nerd Font glyphs (verified single-width) — override any to taste.
+    tab_icons = {
+        plugin = "󰏖",
+        parser = "󰙅",
+        LSP = "󰒋",
+        DAP = "󰃤",
+        Linter = "󰍉",
+        Formatter = "󰉣",
+        snapshot = "󰄄",
     },
     prompt = {
         title_icon = "󰏗 ",

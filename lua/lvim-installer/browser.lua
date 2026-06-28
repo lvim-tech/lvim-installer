@@ -18,18 +18,18 @@ local ui_filters = require("lvim-utils.ui.filters")
 local M = {}
 
 --- Tab definitions.  Mason tabs filter the registry by category; parser/plugin
---- tabs read their own backends.
+--- tabs read their own backends.  Tab-bar icons are config-driven (`config.tab_icons`, keyed by `id`).
 ---@type table[]
 local TABS = {
-    { id = "plugin", kind = "plugin", label = "Plugins", icon = "" },
-    { id = "parser", kind = "parser", label = "Treesitter", icon = "" },
-    { id = "LSP", kind = "mason", category = "LSP", label = "LSP", icon = "" },
-    { id = "DAP", kind = "mason", category = "DAP", label = "DAP", icon = "" },
-    { id = "Linter", kind = "mason", category = "Linter", label = "Linter", icon = "" },
-    { id = "Formatter", kind = "mason", category = "Formatter", label = "Formatter", icon = "" },
+    { id = "plugin", kind = "plugin", label = "Plugins" },
+    { id = "parser", kind = "parser", label = "Treesitter" },
+    { id = "LSP", kind = "mason", category = "LSP", label = "LSP" },
+    { id = "DAP", kind = "mason", category = "DAP", label = "DAP" },
+    { id = "Linter", kind = "mason", category = "Linter", label = "Linter" },
+    { id = "Formatter", kind = "mason", category = "Formatter", label = "Formatter" },
     -- menu mode: its rows are childless action rows (save + each snapshot) — without it ui.tabs would collapse
     -- them into horizontal footer buttons instead of a vertical list in the body.
-    { id = "snapshot", kind = "snapshot", label = "Snapshots", icon = "", menu = true },
+    { id = "snapshot", kind = "snapshot", label = "Snapshots", menu = true },
 }
 
 -- Browse state (persists across the close/reopen cycle).
@@ -1891,7 +1891,7 @@ function M.open(tab_id, layout)
     local tabs = {}
     local sel = 1
     for i, tab in ipairs(TABS) do
-        tabs[#tabs + 1] = { label = tab.label, icon = tab.icon, menu = tab.menu, rows = rows_for(tab) }
+        tabs[#tabs + 1] = { label = tab.label, icon = config.tab_icons[tab.id], menu = tab.menu, rows = rows_for(tab) }
         if tab.id == state.active then
             sel = i
         end
@@ -1907,19 +1907,24 @@ function M.open(tab_id, layout)
             return (state.tab_counts or {})[state.active]
         end,
         tabs = tabs,
-        -- How the panel opens: a per-command override (`:LvimInstaller float`) → `config.browser.layout` →
-        -- "area". "area" = the cmdline/minibuffer dock shared by the fzf pickers + LvimLsp nav; "float" = a
-        -- centred modal; "bottom" = a bottom dock.
-        layout = state.layout or (config.browser or {}).layout or "area",
+        -- How the panel opens: a per-command override (`:LvimInstaller area`) → `config.browser.layout` →
+        -- "float". "float" = a centred modal; "area" = the cmdline/minibuffer dock shared by the fzf pickers +
+        -- LvimLsp nav; "bottom" = a bottom dock.
+        layout = state.layout or (config.browser or {}).layout or "float",
         tab_selector = sel,
         -- Tabs are managed only from the header (press "t"); content keys never jump
         -- to or switch tabs.
         lock_tabs = true,
+        -- The bottom key-hint LEGEND (panel keys • focused-row keys), same as the control center.
+        footer_hints = true,
         -- Use most of the screen — this is a full browser, not a small prompt.
         width = 0.9,
         max_width = 0.9,
         height = 0.9,
         max_height = 0.9,
+        -- The frame defaults to TOP/RIGHT/LEFT borders only; add a BOTTOM edge (" ") so the content gets a
+        -- closing border row below it (scoped to this panel; the global frame border is unchanged).
+        border = { "", " ", "", " ", "", " ", "", " " },
         -- (area layout) the docked row budget — taller than ui.tabs' default 16 for this full browser
         area_height = (config.browser or {}).height or 21,
         -- a BG-only cursorline so the active row keeps its per-part colours (no fg wash)
