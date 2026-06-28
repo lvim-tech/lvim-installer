@@ -23,6 +23,9 @@ return {
     --   "bottom" — a bottom dock floating over the last rows.
     browser = {
         layout = "area",
+        -- (area layout) the docked content-row budget — it scrolls past this. ~30% taller than ui.tabs' own
+        -- default of 16 rows, since this is a full browser rather than a small prompt.
+        height = 21,
     },
     prompt = {
         title_icon = "󰏗 ",

@@ -27,7 +27,9 @@ local TABS = {
     { id = "DAP", kind = "mason", category = "DAP", label = "DAP", icon = "" },
     { id = "Linter", kind = "mason", category = "Linter", label = "Linter", icon = "" },
     { id = "Formatter", kind = "mason", category = "Formatter", label = "Formatter", icon = "" },
-    { id = "snapshot", kind = "snapshot", label = "Snapshots", icon = "" },
+    -- menu mode: its rows are childless action rows (save + each snapshot) — without it ui.tabs would collapse
+    -- them into horizontal footer buttons instead of a vertical list in the body.
+    { id = "snapshot", kind = "snapshot", label = "Snapshots", icon = "", menu = true },
 }
 
 -- Browse state (persists across the close/reopen cycle).
@@ -131,8 +133,13 @@ end
 ---@return string
 local function plugin_label(info, pin)
     local parts = {}
+    -- FIXED-WIDTH load-time column (number right-aligned in 6 cells + " ms" = 9), so the tags after it
+    -- (local / dep / pinned / update) line up across rows no matter the number's width ("0.77 ms" vs
+    -- "12.15 ms"). Reserved with 9 spaces when unloaded so the tag columns still align on those rows.
     if info.loaded and info.time_ms then
-        parts[#parts + 1] = string.format("%.2f ms", info.time_ms)
+        parts[#parts + 1] = string.format("%6.2f ms", info.time_ms)
+    else
+        parts[#parts + 1] = string.rep(" ", 9)
     end
     if info.dir then
         -- a LOCAL dev clone (dir=): no git remote, so it is skipped by the update check — flag it so the
@@ -148,7 +155,7 @@ local function plugin_label(info, pin)
     if info.outdated then
         parts[#parts + 1] = "update"
     end
-    return table.concat(parts, "    ")
+    return (table.concat(parts, "    "):gsub("%s+$", "")) -- drop the reserved column when the row has no tags
 end
 
 -- Per-action icon for the inline action rows (4-space indent baked in).
@@ -937,6 +944,7 @@ local function plugin_item_row(tab, item, w)
             type = "action",
             name = "pd_" .. item.name .. "_" .. i,
             child = true,
+            flat = true, -- no lead type icon: the row carries its own field icon + label in `icon`
             icon = "    " .. (FIELD_ICON[field] or "") .. " " .. string.format("%-" .. (w + 2) .. "s", field .. ":"),
             icon_hl = "LvimInstallerDetailLabel",
             label = vlines[1],
@@ -950,6 +958,7 @@ local function plugin_item_row(tab, item, w)
                 type = "spacer",
                 name = "pd_" .. item.name .. "_" .. i .. "_w" .. j,
                 child = true,
+                flat = true,
                 icon = string.rep(" ", 8 + w),
                 label = vlines[j],
                 hl = { inactive = value_hl },
@@ -1013,6 +1022,7 @@ local function plugin_item_row(tab, item, w)
     return {
         type = "action",
         name = "p_" .. item.name,
+        flat = true, -- no expand caret: the row carries its own status icon + name in `icon`
         icon = "  " .. sicon .. " " .. string.format("%-" .. (w + 4) .. "s", info.name),
         icon_hl = status_hl,
         text_hl = "LvimInstallerParentValue",
@@ -1358,6 +1368,7 @@ local function mason_item_row(tab, item, w)
                 type = "spacer",
                 name = "md_" .. item.name .. "_" .. i .. "_w" .. j,
                 child = true,
+                flat = true,
                 icon = string.rep(" ", 8 + w),
                 label = vlines[j],
                 hl = { inactive = value_hl },
@@ -1597,6 +1608,7 @@ local function parser_item_row(tab, item, w)
                 type = "spacer",
                 name = "td_" .. item.name .. "_" .. i .. "_w" .. j,
                 child = true,
+                flat = true,
                 icon = string.rep(" ", 8 + w),
                 label = vlines[j],
                 hl = { inactive = "LvimInstallerDetailValue" },
@@ -1763,6 +1775,7 @@ local function snapshot_rows(tab)
         {
             type = "action",
             name = "snap_save",
+            flat = true, -- the row's own 󰆓 icon leads; no extra type glyph (matches the plugin tabs)
             label = "󰆓 Save current state…",
             run = function(_, close)
                 if close then
@@ -1774,7 +1787,18 @@ local function snapshot_rows(tab)
         { type = "spacer", name = "sec_snapshots", label = "Active: " .. active },
     }
     if #snaps == 0 then
-        rows[#rows + 1] = { type = "spacer", name = "empty", label = "(no snapshot files found)" }
+        -- Explain WHY it's empty (no snapshot files yet) + what a snapshot is and how to make one.
+        for i, line in ipairs({
+            "",
+            "No snapshots yet. A snapshot freezes every plugin's commit and every",
+            "Mason package's version into one named set, so you can switch the whole",
+            "version set back later (e.g. save “stable” before a big update, then",
+            "restore it if something breaks).",
+            "",
+            "Use 󰆓 Save current state… above to capture the first one.",
+        }) do
+            rows[#rows + 1] = { type = "spacer", name = "empty_" .. i, label = line }
+        end
         return rows
     end
     for _, name in ipairs(snaps) do
@@ -1782,6 +1806,7 @@ local function snapshot_rows(tab)
         rows[#rows + 1] = {
             type = "action",
             name = "snap_" .. name,
+            flat = true, -- the ●/○ marker leads; no extra type glyph
             label = marker .. name,
             run = function(_, close)
                 if close then
@@ -1866,7 +1891,7 @@ function M.open(tab_id, layout)
     local tabs = {}
     local sel = 1
     for i, tab in ipairs(TABS) do
-        tabs[#tabs + 1] = { label = tab.label, icon = tab.icon, rows = rows_for(tab) }
+        tabs[#tabs + 1] = { label = tab.label, icon = tab.icon, menu = tab.menu, rows = rows_for(tab) }
         if tab.id == state.active then
             sel = i
         end
@@ -1895,6 +1920,10 @@ function M.open(tab_id, layout)
         max_width = 0.9,
         height = 0.9,
         max_height = 0.9,
+        -- (area layout) the docked row budget — taller than ui.tabs' default 16 for this full browser
+        area_height = (config.browser or {}).height or 21,
+        -- a BG-only cursorline so the active row keeps its per-part colours (no fg wash)
+        cursorline_hl = "LvimUiCursorLine",
         max_items = 40,
         -- Plugin shortcuts: R reinstall/update, D delete, B browse — act on the
         -- plugin under the cursor (the plugin row or any of its detail/action rows).
