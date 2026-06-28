@@ -971,6 +971,7 @@ local function plugin_item_row(tab, item, w)
                     type = "spacer",
                     name = "pg_" .. item.name .. "_" .. j,
                     child = true,
+                    flat = true,
                     icon = string.rep(" ", 8 + w),
                     label = line,
                     hl = { inactive = "LvimInstallerDetail" },
@@ -1355,6 +1356,7 @@ local function mason_item_row(tab, item, w)
             type = "action",
             name = "md_" .. item.name .. "_" .. i,
             child = true,
+            flat = true, -- no lead type icon: the row carries its own field icon + label in `icon` (matches Plugins)
             icon = "    " .. (FIELD_ICON[field] or "") .. " " .. string.format("%-" .. (w + 2) .. "s", field .. ":"),
             icon_hl = "LvimInstallerDetailLabel",
             label = vlines[1],
@@ -1444,6 +1446,7 @@ local function mason_item_row(tab, item, w)
     return {
         type = "action",
         name = "mi_" .. item.name,
+        flat = true, -- no expand caret: the row carries its own status icon + name in `icon` (matches Plugins)
         icon = "  " .. sicon .. " " .. string.format("%-" .. (w + 4) .. "s", item.name),
         icon_hl = status_hl,
         text_hl = outdated and "LvimInstallerUpdateMark" or "LvimInstallerParentValue",
@@ -1598,6 +1601,7 @@ local function parser_item_row(tab, item, w)
             type = "action",
             name = "td_" .. item.name .. "_" .. i,
             child = true,
+            flat = true, -- no lead type icon: the row carries its own field icon + label in `icon` (matches Plugins)
             icon = "    " .. (FIELD_ICON[fv[1]] or "") .. " " .. string.format("%-" .. (w + 2) .. "s", fv[1] .. ":"),
             icon_hl = "LvimInstallerDetailLabel",
             label = vlines[1],
@@ -1655,6 +1659,7 @@ local function parser_item_row(tab, item, w)
     return {
         type = "action",
         name = "ti_" .. item.name,
+        flat = true, -- no expand caret: the row carries its own status icon + name in `icon` (matches Plugins)
         icon = "  " .. sicon .. " " .. string.format("%-" .. (w + 4) .. "s", item.name),
         icon_hl = status_hl,
         text_hl = item.outdated and "LvimInstallerUpdateMark" or "LvimInstallerParentValue",
