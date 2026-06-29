@@ -159,34 +159,10 @@ local function plugin_label(info, pin)
 end
 
 -- Per-action icon for the inline action rows (4-space indent baked in).
-local ACTION_ICON = { Update = "󰑐", Remove = "󰆴", ["Open source URL"] = "󰏌" }
+local ACTION_ICON = config.action_icons
 
 -- Per-field icons for the inline detail rows.
-local FIELD_ICON = {
-    Status = "󰑐",
-    State = "󰋼",
-    ["Load time"] = "󰅐",
-    Reason = "󰉁",
-    Source = "󰘬",
-    Path = "󰉋",
-    Version = "󰓹",
-    Priority = "󰅃",
-    Outdated = "󰑐",
-    Triggers = "󰉁",
-    Deps = "󰌹",
-    ["Required by"] = "󰌹",
-    -- Mason package fields
-    Installed = "󰓹",
-    Latest = "󰚰",
-    Purl = "󰏖",
-    Description = "󰈙",
-    Homepage = "󰏌",
-    Languages = "󰗊",
-    Categories = "󰓻",
-    Executables = "󰆍",
-    Pinned = "󰐃",
-    Tracking = "󰊢",
-}
+local FIELD_ICON = config.field_icons
 
 -- Pad an icon to a fixed display width so every row's text starts at the same column.
 local ICON_W = 2
@@ -259,8 +235,7 @@ end
 ---@param pin table|nil  the stored convention { version, reftype, branch }, or nil
 ---@return table[]
 local function plugin_detail_fields(info, pin)
-    local state = info.loaded and ("loaded \xc2\xb7 " .. (info.lazy and "lazy" or "eager"))
-        or "not loaded \xc2\xb7 lazy"
+    local state = info.loaded and ("loaded · " .. (info.lazy and "lazy" or "eager")) or "not loaded · lazy"
     local f = { { "State", state } }
     if info.time_ms then
         f[#f + 1] = { "Load time", string.format("%.2f ms", info.time_ms) }
@@ -418,7 +393,7 @@ local function reinstall_menu(name, info)
     if not ui then
         return
     end
-    vim.notify("Fetching refs for " .. name .. "\xe2\x80\xa6")
+    vim.notify("Fetching refs for " .. name .. "…")
     pkg.plugin_fetch(name, function()
         local pin = pkg.get_pin_full("plugin", name)
         local git = pkg.plugin_current(name)
@@ -442,7 +417,7 @@ local function reinstall_menu(name, info)
                 else
                     pkg.unpin("plugin", name)
                 end
-                vim.notify(name .. " \xe2\x86\x92 " .. ref)
+                vim.notify(name .. " → " .. ref)
             end
             M.refresh_open()
         end
@@ -473,7 +448,7 @@ local function reinstall_menu(name, info)
                 return
             end
             ui.select({
-                title = name .. " \xe2\x80\x94 branch",
+                title = name .. " — branch",
                 items = items,
                 current_item = sel,
                 back_key = "<BS>",
@@ -498,7 +473,7 @@ local function reinstall_menu(name, info)
                         end
                     end
                     ui.select({
-                        title = name .. " \xe2\x80\x94 commit on " .. branch,
+                        title = name .. " — commit on " .. branch,
                         items = citems,
                         current_item = csel,
                         back_key = "<BS>",
@@ -527,7 +502,7 @@ local function reinstall_menu(name, info)
                 end
             end
             ui.select({
-                title = name .. " \xe2\x80\x94 tag",
+                title = name .. " — tag",
                 items = tags,
                 current_item = tsel,
                 back_key = "<BS>",
@@ -570,7 +545,7 @@ local function reinstall_menu(name, info)
                         end
                     end
                     ui.select({
-                        title = picked .. " \xe2\x80\x94 lock level",
+                        title = picked .. " — lock level",
                         items = items,
                         current_item = lsel,
                         back_key = "<BS>",
@@ -591,7 +566,7 @@ local function reinstall_menu(name, info)
         function approach_menu()
             local b_it, t_it = "Branch + commit", "Tag"
             ui.select({
-                title = "Reinstall " .. name .. " \xe2\x80\x94 by",
+                title = "Reinstall " .. name .. " — by",
                 items = { b_it, t_it },
                 current_item = (rt == "branch" or rt == "commit") and b_it or ((rt == "tag") and t_it or nil),
                 callback = function(c, i)
@@ -726,7 +701,7 @@ local function mason_pin_menu(name)
                 end
             end
             ui.select({
-                title = "Install " .. name .. " \xe2\x80\x94 choose version",
+                title = "Install " .. name .. " — choose version",
                 items = items,
                 current_item = sel,
                 callback = function(confirmed, idx)
@@ -1233,7 +1208,7 @@ local function mason_detail_fields(item)
         f[#f + 1] = { "Version", table.concat(vparts, "  ") }
     end
     -- Tracking: the pinned version, or "Latest" (follows the registry).
-    f[#f + 1] = { "Tracking", item.pinned and ("Pinned \xe2\x86\x92 " .. item.pinned) or "Latest" }
+    f[#f + 1] = { "Tracking", item.pinned and ("Pinned → " .. item.pinned) or "Latest" }
     -- Status: up to date / outdated (only meaningful once installed).
     if item.installed then
         f[#f + 1] = { "Status", mason_outdated(item) and "outdated" or "up to date" }
@@ -1342,7 +1317,7 @@ local function mason_item_row(tab, item, w)
         local field = fv[1]
         local run, suffix
         if field == "Homepage" and vim.ui.open then
-            suffix = "\xf3\xb0\x8f\x8c" -- 󰏌
+            suffix = "󰏌" -- 󰏌
             run = function()
                 pcall(vim.ui.open, fv[2])
             end
@@ -1432,16 +1407,16 @@ local function mason_item_row(tab, item, w)
     -- Update indicator: installed version differs from the registry's latest.
     local latest = mason_latest(item.spec)
     local outdated = mason_outdated(item)
-    local sicon = item.installed and "\xe2\x97\x8f" or "\xe2\x97\x8b" -- ● / ○
+    local sicon = item.installed and "●" or "○" -- ● / ○
     local status_hl = (not item.installed and "LvimInstallerStatusLazy")
         or (outdated and "LvimInstallerStatusOutdated")
         or "LvimInstallerStatusLoaded"
     local label = item.version or ""
     if outdated then
-        label = label .. "    \xe2\x86\x92 " .. latest -- → latest
+        label = label .. "    → " .. latest -- → latest
     end
     if item.pinned then
-        label = "\xf3\xb0\x90\x83 " .. label -- 󰐃 pinned
+        label = "󰐃 " .. label -- 󰐃 pinned
     end
     return {
         type = "action",
@@ -1493,7 +1468,7 @@ local function mason_rows(tab)
                         vim.notify("lvim-installer: all packages up to date")
                         return
                     end
-                    vim.notify(("lvim-installer: updating %d package(s)\xe2\x80\xa6"):format(#outdated))
+                    vim.notify(("lvim-installer: updating %d package(s)…"):format(#outdated))
                     pkg.update("mason", outdated, function()
                         vim.notify(("lvim-installer: updated %d package(s)"):format(#outdated))
                         M.refresh_open()
@@ -1526,7 +1501,7 @@ local function mason_rows(tab)
         rows[#rows + 1] = {
             type = "action",
             name = name,
-            icon = "\xf3\xb0\x89\x8b", -- 󰉋
+            icon = "󰉋", -- 󰉋
             icon_hl = "LvimInstallerSection",
             label = string.format(label, #kids),
             text_hl = "LvimInstallerSection",
@@ -1652,7 +1627,7 @@ local function parser_item_row(tab, item, w)
         }
     end
     children[#children + 1] = item_action_bar("ta_" .. item.name, specs)
-    local sicon = item.installed and "\xe2\x97\x8f" or "\xe2\x97\x8b" -- ● / ○
+    local sicon = item.installed and "●" or "○" -- ● / ○
     local status_hl = (not item.installed and "LvimInstallerStatusLazy")
         or (item.outdated and "LvimInstallerStatusOutdated")
         or "LvimInstallerStatusLoaded"
@@ -1712,7 +1687,7 @@ local function parser_rows(tab)
                             M.refresh_open()
                             return
                         end
-                        vim.notify(("lvim-installer: updating %d parser(s)\xe2\x80\xa6"):format(#names))
+                        vim.notify(("lvim-installer: updating %d parser(s)…"):format(#names))
                         pkg.update("parser", names, function()
                             vim.notify(("lvim-installer: updated %d parser(s)"):format(#names))
                             M.refresh_open()
@@ -1756,7 +1731,7 @@ local function parser_rows(tab)
         rows[#rows + 1] = {
             type = "action",
             name = name,
-            icon = "\xf3\xb0\x89\x8b", -- 󰉋
+            icon = "󰉋", -- 󰉋
             icon_hl = "LvimInstallerSection",
             label = string.format(label, #kids),
             text_hl = "LvimInstallerSection",
