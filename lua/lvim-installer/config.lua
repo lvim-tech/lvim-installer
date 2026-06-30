@@ -86,7 +86,6 @@ return {
         done_ttl = 4000,
     },
     popup_global = {
-        border = { "", "", "", " ", " ", " ", " ", " " },
         position = "editor",
         width = 0.8,
         max_width = 0.8,

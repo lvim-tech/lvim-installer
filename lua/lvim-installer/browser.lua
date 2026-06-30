@@ -1881,8 +1881,8 @@ function M.open(tab_id, layout)
     state.tabs = tabs
     state.handle = ui.tabs({
         title = "Package Manager",
-        -- The title counter (visible / total for the active tab) — the picker's title_counter equivalent,
-        -- shown on the statusline overlay; populated by the row builders into state.tab_counts.
+        -- The title counter (visible / total for the active tab) — the chassis renders it on the top
+        -- border (right-aligned, opposite the title); populated by the row builders into state.tab_counts.
         title_count = function()
             return (state.tab_counts or {})[state.active]
         end,
@@ -1902,9 +1902,6 @@ function M.open(tab_id, layout)
         max_width = config.browser.width,
         height = 0.9,
         max_height = 0.9,
-        -- The frame defaults to TOP/RIGHT/LEFT borders only; add a BOTTOM edge (" ") so the content gets a
-        -- closing border row below it (scoped to this panel; the global frame border is unchanged).
-        border = { "", " ", "", " ", "", " ", "", " " },
         -- (area layout) the docked row budget — taller than ui.tabs' default 16 for this full browser
         area_height = (config.browser or {}).height or 21,
         -- a BG-only cursorline so the active row keeps its per-part colours (no fg wash)
