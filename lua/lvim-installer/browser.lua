@@ -428,10 +428,21 @@ local function reinstall_menu(name, info)
             local default = pkg.plugin_default_branch(name)
             local items, vals, sel = {}, {}, nil
             local function add(b, is_default)
-                local it = b .. (is_default and "  (default)" or "")
+                -- Build ONE combined "(default, current)" suffix ourselves — the branch that is both the repo
+                -- default AND the installed one would otherwise stack two suffixes. The select gets
+                -- `mark_current = false` below so lvim-utils only FOCUSES `sel`, not re-appends "(current)".
+                local is_current = (cur_branch == b)
+                local tags = {}
+                if is_default then
+                    tags[#tags + 1] = "default"
+                end
+                if is_current then
+                    tags[#tags + 1] = "current"
+                end
+                local it = b .. (#tags > 0 and ("  (" .. table.concat(tags, ", ") .. ")") or "")
                 items[#items + 1] = it
                 vals[#vals + 1] = b
-                if cur_branch == b then
+                if is_current then
                     sel = it
                 end
             end
@@ -451,6 +462,7 @@ local function reinstall_menu(name, info)
                 title = name .. " — branch",
                 items = items,
                 current_item = sel,
+                mark_current = false, -- the label already carries the combined "(default, current)" marker
                 back_key = "<BS>",
                 on_back = approach_menu,
                 callback = function(c, i)
