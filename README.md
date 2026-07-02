@@ -51,18 +51,18 @@ foundations — [lvim-pkg](https://github.com/lvim-tech/lvim-pkg) (engine) and
 the **bootstrap of the whole ecosystem**: once they load, the manager installs and
 manages everything else. Because the ecosystem *is* the package manager (it installs
 plugins through Neovim's built-in **`vim.pack`**), you do **not** need an external
-plugin manager — the **Native** method below is the recommended one.
+plugin manager — the **lvim-installer (recommended)** bootstrap below is the intended one.
 
-### LVIM IDE
+### lvim-installer (recommended)
 
-Ships with LVIM IDE (which performs the bootstrap for you). Override its options in
-your user module (`lua/modules/user/init.lua`):
+lvim-installer **is** the package manager: once the bootstrap trio loads it installs,
+updates, pins and removes every other plugin (and self-updates) from the **Plugins** tab
+through Neovim's built-in `vim.pack` (via lvim-pkg) — no external plugin manager needed.
+Bootstrap the trio with the **Native (vim.pack)** snippet below, then manage everything
+else from the manager:
 
-```lua
-modules["lvim-tech/lvim-installer"] = {
-    dependencies = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
-    opts = { ... },
-}
+```vim
+:LvimInstaller plugins
 ```
 
 ### lazy.nvim
@@ -77,7 +77,19 @@ return {
 }
 ```
 
-### Native (vim.pack / packadd) — recommended
+### packer.nvim
+
+```lua
+use({
+    "lvim-tech/lvim-installer",
+    requires = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
+    config = function()
+        require("lvim-installer").setup({})
+    end,
+})
+```
+
+### Native (vim.pack)
 
 This is the whole package manager — no external plugin manager needed. Bootstrap the
 trio in order (`lvim-utils` and `lvim-pkg` are independent and must come before
@@ -111,18 +123,6 @@ first-open prompt.
 > When lvim-installer is active, run `lvim-ts` with `auto_install = false` so parsers
 > are offered through the prompt instead of installing silently.
 
-### packer.nvim
-
-```lua
-use({
-    "lvim-tech/lvim-installer",
-    requires = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
-    config = function()
-        require("lvim-installer").setup({})
-    end,
-})
-```
-
 ## Usage
 
 ```vim
@@ -134,9 +134,18 @@ use({
 :LvimInstaller parsers     " open on the Treesitter tab
 :LvimInstaller plugins     " open on the Plugins tab
 
-:LvimInstaller update-registry          " force-refresh both catalogues now
+" Layout tokens (default is config.browser.layout). A token can be given alone or
+" combined with a tab, in any order — the layout sticks for the rest of the session.
+:LvimInstaller float          " a centred floating window
+:LvimInstaller area           " the cmdline / minibuffer dock
+:LvimInstaller bottom         " a bottom dock over the last rows
+:LvimInstaller plugins float  " a tab + a layout (either order works)
+
+:LvimInstaller update-registry          " refresh all catalogues + run all checks (default)
 :LvimInstaller update-registry mason    " just the Mason catalogue
-:LvimInstaller update-registry ts       " just the treesitter parser registry
+:LvimInstaller update-registry ts       " just the treesitter parser registry + parser check
+:LvimInstaller update-registry plugin   " just the plugin outdated check
+:LvimInstaller update-registry all      " everything (explicit)
 
 :LvimInstaller snapshot                 " open the snapshots tab
 :LvimInstaller snapshot save            " save the current state as a snapshot
@@ -144,13 +153,14 @@ use({
 
 ```lua
 require("lvim-installer").open("LSP") -- open the manager at a tab
+require("lvim-installer").open("plugin", "float") -- open at a tab in a specific layout
 require("lvim-installer").offer("go") -- manually offer the prompt for a filetype
 ```
 
 | Function | Description |
 |---|---|
 | `setup(opts?)` | Register the unified prompt and the `:LvimInstaller` command. |
-| `open(tab?)` | Open the manager at a tab: `"LSP"` \| `"DAP"` \| `"Linter"` \| `"Formatter"` \| `"parser"` \| `"plugin"`. |
+| `open(tab?, layout?)` | Open the manager at a tab (`"LSP"` \| `"DAP"` \| `"Linter"` \| `"Formatter"` \| `"parser"` \| `"plugin"` \| `"snapshot"`) in an optional layout (`"float"` \| `"area"` \| `"bottom"`). |
 | `offer(ft?)` | Manually offer the prompt for a filetype (default: current buffer). |
 | `update_registry(which?)` | Refresh catalogues + run update checks (`mason` \| `ts` \| `plugin` \| `all`; default `all`). |
 
@@ -164,7 +174,33 @@ require("lvim-installer").setup({
     prompt = {
         title_icon = "󰏗 ",
         snooze_ms = 5 * 60 * 1000, -- snooze duration after a plain skip (q / <Esc>)
+        width = 0.9, -- fraction of the screen wide for both prompt popups
     },
+
+    -- The package-manager browser: how it opens.
+    browser = {
+        layout = "float", -- "float" (centred modal) | "area" (cmdline/minibuffer dock) | "bottom" (bottom dock)
+        width = 0.9, -- (float) fraction of the screen wide
+        height = 21, -- (area) the docked content-row budget; it scrolls past this
+    },
+
+    -- Browser tab-bar icons, keyed by tab id (Nerd Font glyphs).
+    tab_icons = {
+        plugin = "󰏖",
+        parser = "󰙅",
+        LSP = "󰒋",
+        DAP = "󰃤",
+        Linter = "󰍉",
+        Formatter = "󰉣",
+        snapshot = "󰄄",
+    },
+
+    -- Per-action icons for the browser's inline action rows, keyed by action label.
+    action_icons = { Update = "󰑐", Remove = "󰆴", ["Open source URL"] = "󰏌" },
+
+    -- Per-field icons for the browser's inline detail rows, keyed by field name
+    -- (Status, State, Version, Source, Path, Installed, Latest, … — see config.lua for the full set).
+    field_icons = { Status = "󰑐", Version = "󰓹", Source = "󰘬", Path = "󰉋" },
 
     -- Mason tools (LSP / DAP / linter / formatter) to install silently at setup.
     ensure_installed = {}, -- e.g. { "lua_ls", "stylua", "ruff" } (allowlist)
@@ -179,8 +215,8 @@ require("lvim-installer").setup({
         icon = "󰏗",
         header_hl = "LvimNotifyHeaderInfo",
         spinner = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
-        icon_ok = "✓",
-        icon_error = "✗",
+        icon_ok = "󰄬",
+        icon_error = "󰅖",
         done_ttl = 4000,
     },
 
@@ -197,7 +233,11 @@ require("lvim-installer").setup({
 
 | Section | Responsible for |
 |---|---|
-| `prompt` | the first-open "missing tools" prompt: title icon, snooze duration |
+| `prompt` | the first-open "missing tools" prompt: title icon, snooze duration, width |
+| `browser` | how the manager opens: `layout` (`float` \| `area` \| `bottom`), `width`, `height` |
+| `tab_icons` | the browser tab-bar icons, keyed by tab id |
+| `action_icons` | the browser's inline action-row icons, keyed by action label |
+| `field_icons` | the browser's inline detail-row icons, keyed by field name |
 | `update_concurrency` | batch size for "Update all" of plugins |
 | `progress` | the install progress panel (name, icon, spinner, done timeout) |
 | `popup_global` | the manager / prompt window: geometry, icons, labels, key bindings |

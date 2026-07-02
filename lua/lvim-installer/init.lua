@@ -12,6 +12,7 @@ local highlights = require("lvim-installer.highlights")
 local prompt = require("lvim-installer.prompt")
 local browser = require("lvim-installer.browser")
 local progress = require("lvim-installer.progress")
+local snapshot = require("lvim-installer.snapshot")
 
 local M = {}
 
@@ -81,9 +82,9 @@ function M.setup(opts)
         end
         if args[1] == "snapshot" then
             if args[2] == "save" then
-                require("lvim-installer.snapshot").save(args[3])
+                snapshot.save(args[3])
             else
-                require("lvim-installer.snapshot").open()
+                snapshot.open()
             end
             return
         end
@@ -250,12 +251,10 @@ function M.offer(ft)
     prompt.offer(ft or vim.bo.filetype)
 end
 
---- Open the package manager window at a specific tab.
----@param tab? "LSP"|"DAP"|"Linter"|"Formatter"|"parser"|"plugin"  Initial tab
+--- Open the package manager window at a specific tab, in a specific layout.
+---@param tab? "LSP"|"DAP"|"Linter"|"Formatter"|"parser"|"plugin"|"snapshot"  Initial tab
+---@param layout? "area"|"float"|"bottom"  Overrides config.browser.layout for this session
 ---@return nil
---- Open the package manager.
----@param tab? string     the tab to open at (e.g. "plugin", "LSP")
----@param layout? string  "area"|"float"|"bottom" — overrides config.browser.layout for the session
 function M.open(tab, layout)
     browser.open(tab, layout)
 end

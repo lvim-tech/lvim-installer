@@ -14,6 +14,7 @@ local pkg_paths = require("lvim-pkg.paths")
 local config = require("lvim-installer.config")
 local progress = require("lvim-installer.progress")
 local ui_mod = require("lvim-installer.ui")
+local snapshot = require("lvim-installer.snapshot")
 local ui_filters = require("lvim-utils.ui.filters")
 local M = {}
 
@@ -114,17 +115,17 @@ local function build_items(tab)
     return items
 end
 
--- Status glyph + highlight groups for a plugin by state. Geometric circles render
--- in any font; the colours come from theme-overridable groups.
+-- Status glyph + highlight groups for a plugin by state. Nerd Font circles (filled =
+-- present/loaded, hollow = lazy); the colours come from theme-overridable groups.
 ---@param info table
 ---@return string icon, string icon_hl
 local function plugin_style(info)
     if info.outdated then
-        return "●", "LvimInstallerStatusOutdated"
+        return "", "LvimInstallerStatusOutdated"
     elseif info.loaded then
-        return "●", "LvimInstallerStatusLoaded"
+        return "", "LvimInstallerStatusLoaded"
     end
-    return "○", "LvimInstallerStatusLazy"
+    return "", "LvimInstallerStatusLazy"
 end
 
 -- Plugin row text: name in a fixed column, then load time and/or update marker.
@@ -174,10 +175,6 @@ end
 -- Segmented filter modes shown as the top toolbar bar.
 local FILTER_MODES = { "All", "Loaded", "Lazy", "Deps", "Outdated", "Up-to-date", "Search" }
 
---- Whether a plugin item passes the active filter mode (and search text).
----@param item   table
----@param tab_id string
----@return boolean
 --- Whether a plugin item matches a SPECIFIC filter mode (independent of the current mode) — shared by the
 --- live filter-bar counts and `passes_filter` below.
 ---@param item table
@@ -203,6 +200,10 @@ local function plugin_match(item, mode, tab_id)
     return true
 end
 
+--- Whether a plugin item passes the active filter mode (and search text).
+---@param item   table
+---@param tab_id string
+---@return boolean
 local function passes_filter(item, tab_id)
     return plugin_match(item, tab_mode(tab_id), tab_id)
 end
@@ -286,101 +287,6 @@ local function plugin_detail_fields(info, pin)
         f[#f + 1] = { "Deps", table.concat(info.dependencies, ", ") }
     end
     return f
-end
-
---- Install or update one item, then reopen the browser.
----@param item table
----@param is_update boolean
-local function run_op(item, is_update)
-    local op = is_update and "update" or "install"
-    if item.kind == "mason" then
-        progress.start({ item.name })
-        pkg[op](item.kind, { item.name }, function(results)
-            progress.done(results)
-            M.open()
-        end, {
-            on_progress = function(name, status, action)
-                progress.update(name, status, action)
-            end,
-        })
-    else
-        pkg[op](item.kind, { item.name }, function()
-            M.open()
-        end)
-    end
-end
-
---- Open the per-item action submenu, then reopen the browser.
----@param item table
-local function item_submenu(item)
-    local ui = ui_mod.get()
-    if not ui then
-        return
-    end
-    local actions = item.installed and { "Update", "Remove", "Pin version…" } or { "Install", "Pin version…" }
-    if pkg.get_pin(item.kind, item.name) then
-        actions[#actions + 1] = "Unpin"
-    end
-    ui.select({
-        title = item.name,
-        items = actions,
-        callback = function(confirmed, idx)
-            -- select's callback gives the 1-based index, not the label.
-            local choice = idx and actions[idx]
-            if not confirmed or not choice then
-                M.open()
-                return
-            end
-            if choice == "Install" or choice == "Update" then
-                run_op(item, choice == "Update")
-            elseif choice == "Remove" then
-                pkg.remove(item.kind, { item.name }, function()
-                    M.open()
-                end)
-            elseif choice == "Unpin" then
-                pkg.unpin(item.kind, item.name)
-                M.open()
-            elseif choice == "Pin version…" then
-                vim.ui.input({
-                    prompt = "Pin " .. item.name .. " to version/commit: ",
-                    default = pkg.get_pin(item.kind, item.name) or "",
-                }, function(version)
-                    if version and version ~= "" then
-                        pkg.pin(item.kind, item.name, version)
-                        run_op(item, true)
-                    else
-                        M.open()
-                    end
-                end)
-            else
-                M.open()
-            end
-        end,
-    })
-end
-
---- An item action row.
----@param tab  table
----@param item table
----@return table
-local function item_row(tab, item)
-    local pin = pkg.get_pin(item.kind, item.name)
-    local icon = item.installed and "" or ""
-    return {
-        type = "action",
-        name = "item_" .. item.name,
-        label = string.format("%s %s%s", icon, item.name, pin and ("  [" .. pin .. "]") or ""),
-        desc = item.desc,
-        run = function(_, close)
-            state.active = tab.id
-            state.pending = function()
-                item_submenu(item)
-            end
-            if close then
-                close()
-            end
-        end,
-    }
 end
 
 --- Reinstall flow: chained dropdowns over fresh refs. Stores the full convention.
@@ -1034,11 +940,6 @@ local function bar_btn_style()
     }
 end
 
---- The filter-mode bar for a tab — a `ui.bar` of buttons (one per FILTER_MODES entry, centered, chevrons on
---- overflow). The active mode is highlighted; clicking a mode sets it + refreshes ("Search" prompts first).
----@param tab_id string
----@param modes? string[]  the filter labels (default FILTER_MODES — the plugin set)
----@return table  a `type="bar"` row
 --- The filter bar — built through the SHARED filter-group model (lvim-utils.ui.filters), identical to the
 --- picker's. Optional `items` + `match(item, mode)` drive a live per-mode COUNT. Activation sets the mode and
 --- refreshes ("Search" prompts first).
@@ -1419,7 +1320,7 @@ local function mason_item_row(tab, item, w)
     -- Update indicator: installed version differs from the registry's latest.
     local latest = mason_latest(item.spec)
     local outdated = mason_outdated(item)
-    local sicon = item.installed and "●" or "○" -- ● / ○
+    local sicon = item.installed and "" or "" -- filled = installed / hollow = available
     local status_hl = (not item.installed and "LvimInstallerStatusLazy")
         or (outdated and "LvimInstallerStatusOutdated")
         or "LvimInstallerStatusLoaded"
@@ -1639,7 +1540,7 @@ local function parser_item_row(tab, item, w)
         }
     end
     children[#children + 1] = item_action_bar("ta_" .. item.name, specs)
-    local sicon = item.installed and "●" or "○" -- ● / ○
+    local sicon = item.installed and "" or "" -- filled = installed / hollow = available
     local status_hl = (not item.installed and "LvimInstallerStatusLazy")
         or (item.outdated and "LvimInstallerStatusOutdated")
         or "LvimInstallerStatusLoaded"
@@ -1773,7 +1674,7 @@ local function snapshot_rows(tab)
                 if close then
                     close()
                 end
-                require("lvim-installer.snapshot").save()
+                snapshot.save()
             end,
         },
         { type = "spacer", name = "sec_snapshots", label = "Active: " .. active },
@@ -1794,17 +1695,17 @@ local function snapshot_rows(tab)
         return rows
     end
     for _, name in ipairs(snaps) do
-        local marker = name == active and "● " or "○ "
+        local marker = name == active and " " or " "
         rows[#rows + 1] = {
             type = "action",
             name = "snap_" .. name,
-            flat = true, -- the ●/○ marker leads; no extra type glyph
+            flat = true, -- the / marker leads; no extra type glyph
             label = marker .. name,
             run = function(_, close)
                 if close then
                     close()
                 end
-                require("lvim-installer.snapshot").apply(name)
+                snapshot.apply(name)
             end,
         }
     end
@@ -1821,53 +1722,14 @@ local function rows_for(tab)
     elseif tab.kind == "snapshot" then
         return snapshot_rows(tab)
     end
-    -- (no other flat tabs remain)
-    local rows = {
-        {
-            type = "action",
-            name = "filter",
-            label = "Filter: " .. (tab_filter(tab.id) ~= "" and tab_filter(tab.id) or "(all)"),
-            run = function(_, close)
-                vim.ui.input({ prompt = "Filter: ", default = tab_filter(tab.id) }, function(input)
-                    if input ~= nil then
-                        state.filters[tab.id] = input
-                    end
-                    state.active = tab.id
-                    state.pending = M.open
-                    if close then
-                        close()
-                    end
-                end)
-            end,
-        },
-    }
-
-    -- Split the filtered items into installed / available.
-    local f = tab_filter(tab.id):lower()
-    local installed, available = {}, {}
-    for _, item in ipairs(build_items(tab)) do
-        if f == "" or item.name:lower():find(f, 1, true) then
-            table.insert(item.installed and installed or available, item)
-        end
-    end
-
-    rows[#rows + 1] = { type = "spacer", name = "sec_installed", label = string.format("Installed (%d)", #installed) }
-    for _, item in ipairs(installed) do
-        rows[#rows + 1] = item_row(tab, item)
-    end
-    rows[#rows + 1] = { type = "spacer", name = "sec_available", label = string.format("Available (%d)", #available) }
-    for _, item in ipairs(available) do
-        rows[#rows + 1] = item_row(tab, item)
-    end
-    return rows
+    -- Every TABS entry is plugin/mason/parser/snapshot, so one of the branches above always returns.
+    return {}
 end
 
---- Open (or re-open) the package manager window.
----@param tab_id? string  Initial tab id (e.g. "LSP", "parser", "plugin")
----@return nil
---- Open the package-manager browser.
----@param tab_id? string  the tab to open at
+--- Open (or re-open) the package-manager browser at a specific tab, in a specific layout.
+---@param tab_id? string  the tab to open at (e.g. "LSP", "parser", "plugin")
 ---@param layout? string  "area"|"float"|"bottom" — overrides config.browser.layout for the session
+---@return nil
 function M.open(tab_id, layout)
     if tab_id then
         state.active = tab_id
@@ -2112,75 +1974,6 @@ function M.refresh_open(opts)
     end
 end
 
---- Update one plugin with a live in-popup spinner (no separate UI / no reopen).
----@param item table
----@param verb_override? string  Spinner verb (e.g. "Reinstalling…")
----@param op? fun()  The operation to run (defaults to vim.pack update for `item`)
----@return nil
-function M.update_plugin(item, verb_override, op)
-    local row = find_row("p_" .. item.name)
-    if not row then
-        return
-    end
-    -- "Updating…" / "Reinstalling…" — caller may force one (R vs U).
-    local verb = verb_override or (item.info and item.info.outdated and "Updating…" or "Reinstalling…")
-    row.icon_hl = "LvimInstallerProgress"
-    row.text_hl = "LvimInstallerProgress"
-    local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
-    local fi = 1
-    local timer = vim.uv.new_timer()
-    local done = false
-
-    local function finish()
-        if done then
-            return
-        end
-        done = true
-        if timer then
-            timer:stop()
-            timer:close()
-            timer = nil
-        end
-        pcall(vim.api.nvim_del_augroup_by_name, "lvim_installer_upd_" .. item.name)
-        M.refresh_open()
-    end
-
-    timer:start(
-        0,
-        90,
-        vim.schedule_wrap(function()
-            row.label = frames[fi] .. "  " .. verb
-            fi = fi % #frames + 1
-            if state.handle and state.handle.valid() then
-                state.handle.render()
-                pcall(vim.cmd, "redraw")
-            else
-                finish()
-            end
-        end)
-    )
-
-    -- vim.pack.update(force) applies asynchronously; PackChanged signals completion.
-    local grp = vim.api.nvim_create_augroup("lvim_installer_upd_" .. item.name, { clear = true })
-    vim.api.nvim_create_autocmd("PackChanged", {
-        group = grp,
-        callback = function(ev)
-            local d = ev.data
-            if d and d.spec and d.spec.name == item.name and (d.kind == "update" or d.kind == "install") then
-                finish()
-            end
-        end,
-    })
-    -- Fallback: a plugin already up to date emits no PackChanged.
-    vim.defer_fn(finish, 8000)
-
-    if op then
-        op()
-    else
-        pkg.update("plugin", { item.name }, function() end)
-    end
-end
-
 --- Install or update one Mason package with a live in-popup spinner.
 ---@param name string
 ---@param is_update boolean
@@ -2269,7 +2062,7 @@ function M.update_all()
             local sections = {
                 { "updating", frames[fi], "LvimInstallerAction" },
                 { "queued", "·", "LvimInstallerDetail" },
-                { "done", "✓", "LvimInstallerStatusLoaded" },
+                { "done", "󰄬", "LvimInstallerStatusLoaded" },
             }
             for _, sec in ipairs(sections) do
                 for _, n in ipairs(targets) do

@@ -114,7 +114,7 @@ function M.open()
     local SAVE = "󰆓 Save current state…"
     local items = { SAVE }
     for _, name in ipairs(snaps) do
-        items[#items + 1] = (name == active and "● " or "○ ") .. name
+        items[#items + 1] = (name == active and " " or " ") .. name
     end
     ui.select({
         title = "Snapshot — active: " .. active,

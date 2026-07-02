@@ -12,6 +12,8 @@
 ---@field ensure_installed string[]  Mason tools to install silently at setup (allowlist)
 ---@field browser     table   The Package Manager panel: `layout` = "area"|"float"|"bottom"
 ---@field tab_icons   table<string,string>  Browser tab-bar icons keyed by tab id (Nerd Font glyphs)
+---@field action_icons table<string,string>  Inline action-row icons keyed by action label (Nerd Font glyphs)
+---@field field_icons  table<string,string>  Inline detail-row icons keyed by field name (Nerd Font glyphs)
 
 ---@type LvimInstallerConfig
 return {
@@ -81,8 +83,8 @@ return {
         icon = "󰏗",
         header_hl = "LvimNotifyHeaderInfo",
         spinner = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
-        icon_ok = "✓",
-        icon_error = "✗",
+        icon_ok = "󰄬",
+        icon_error = "󰅖",
         done_ttl = 4000,
     },
     popup_global = {
