@@ -93,7 +93,9 @@ return {
         -- the SHARED lvim-utils `config.ui` defaults (the presenters read them), so nothing is duplicated or can
         -- drift. (An earlier `height = "auto"` here — the OLD string size model — reached ui.tabs as
         -- `{ fixed = "auto" }` and crashed `axis_size`; the popups auto-fit their content instead.)
-        width = 0.8, -- installer popups are a fixed 0.8 wide (the install/decline prompt overrides to 0.9)
+        -- No `width` either: the small child popups (Delete/Reinstall/… confirm menus) AUTO-FIT their content.
+        -- The BROWSER passes its own `config.browser.width` and the install/decline prompts force their own size,
+        -- so nothing here needs a shared fixed width (a leftover 0.8 only forced the confirm menus too wide).
         filetype = "lvim-installer-ui",
 
         icons = {

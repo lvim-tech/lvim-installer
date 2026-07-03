@@ -659,7 +659,7 @@ local function plugin_action(name, action)
         local choices = { "Delete", "Cancel" }
         ui.select({
             title = "Delete " .. name .. "?",
-            info = "Deletes it from disk (a config plugin returns on next start).",
+            subtitle = { text = "Deletes it from disk (a config plugin returns on next start).", type = "warn" },
             items = choices,
             callback = function(confirmed, idx)
                 if confirmed and choices[idx] == "Delete" then
@@ -1197,7 +1197,7 @@ local function mason_action(name, action)
         local choices = { "Delete", "Cancel" }
         ui.select({
             title = "Delete " .. name .. "?",
-            info = "Removes the installed package from disk.",
+            subtitle = { text = "Removes the installed package from disk.", type = "warn" },
             items = choices,
             callback = function(confirmed, idx)
                 if confirmed and choices[idx] == "Delete" then
@@ -1452,7 +1452,7 @@ local function parser_action(name, action)
         local choices = { "Delete", "Cancel" }
         ui.select({
             title = "Delete parser " .. name .. "?",
-            info = "Removes the compiled parser.",
+            subtitle = { text = "Removes the compiled parser.", type = "warn" },
             items = choices,
             callback = function(confirmed, idx)
                 if confirmed and choices[idx] == "Delete" then
