@@ -16,6 +16,7 @@ local progress = require("lvim-installer.progress")
 local ui_mod = require("lvim-installer.ui")
 local snapshot = require("lvim-installer.snapshot")
 local ui_filters = require("lvim-utils.ui.filters")
+local surface = require("lvim-utils.ui.surface")
 local M = {}
 
 --- Tab definitions.  Mason tabs filter the registry by category; parser/plugin
@@ -772,12 +773,14 @@ end
 local function item_action_bar(name, specs)
     local items = {}
     for _, s in ipairs(specs) do
-        items[#items + 1] = {
-            type = "button",
-            text = s.label,
+        -- Built through the SHARED `surface.button` mapper — the `plain` KIND (no lead badge), so the `key`
+        -- letter brackets INSIDE the caption ([R]einstall …) exactly as before; the installer's own accent
+        -- colours ride in as the `hl` box override (text box only, no icon box — the bracket takes the text tint).
+        items[#items + 1] = surface.button({
+            name = s.label,
             key = s.key,
             run = s.run,
-            style = {
+            hl = {
                 text = {
                     padding = { 1, 1 },
                     normal = s.hl or "LvimInstallerToolbar", -- the button's own accent (inactive)
@@ -786,7 +789,7 @@ local function item_action_bar(name, specs)
                     hover_active = "LvimInstallerToolbarHoverActive", -- the cursor on the applied button
                 },
             },
-        }
+        }, "plain")
     end
     return { type = "bar", name = name, align = "center", child = true, items = items }
 end
@@ -987,7 +990,9 @@ end
 local function action_bar(specs)
     local items = {}
     for _, s in ipairs(specs) do
-        items[#items + 1] = { type = "button", text = s[1], run = s[2], style = bar_btn_style() }
+        -- Built through the SHARED `surface.button` mapper — the `plain` KIND (no key, no badge); the toolbar
+        -- accent colours (from `bar_btn_style`) ride in as the `hl` box override, so the button is byte-identical.
+        items[#items + 1] = surface.button({ name = s[1], run = s[2], hl = bar_btn_style() }, "plain")
     end
     return { type = "bar", name = "actions", align = "center", items = items }
 end
