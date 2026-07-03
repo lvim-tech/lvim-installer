@@ -142,8 +142,11 @@ function M.show(ft)
 
     ui.tabs({
         title = config.prompt.title_icon .. "Install for " .. ft,
+        title_pos = "center", -- centre the title over the dialog (not the flush-left panel default)
         tabs = tabs,
-        width = config.prompt.width,
+        -- Auto-FIT the width to the content (the item rows / action bar), never wider than config.prompt.width.
+        -- A size SPEC forces auto-fit over the shared FIXED float width.
+        width = { auto = true, max = config.prompt.width },
         -- Footer shows only these action buttons, in order (no default nav hints).
         footer_hints = {
             { key = "a", label = "All" },
@@ -188,7 +191,7 @@ function M.ask_decline(ft, skipped)
     ui.select({
         title = config.prompt.title_icon .. "Skipped for " .. ft,
         subtitle = table.concat(names, ", "),
-        width = config.prompt.width,
+        -- No fixed width: ui.select auto-fits its content (capped by config.ui.max_width), title centred.
         items = { "Don't ask again", "Ask later" },
         callback = function(confirmed, index)
             if confirmed and index == 1 then
