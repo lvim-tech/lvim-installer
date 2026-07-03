@@ -88,15 +88,13 @@ return {
         done_ttl = 4000,
     },
     popup_global = {
-        position = "editor",
-        width = 0.8,
-        max_width = 0.8,
-        height = "auto",
-        max_height = 0.8,
-        max_items = 15,
+        -- Passed verbatim to lvim-utils.ui.new() as per-open DEFAULTS. Only lvim-installer-SPECIFIC values live
+        -- here — sizing caps (max_width/max_height), max_items, close_keys, position and markview all come from
+        -- the SHARED lvim-utils `config.ui` defaults (the presenters read them), so nothing is duplicated or can
+        -- drift. (An earlier `height = "auto"` here — the OLD string size model — reached ui.tabs as
+        -- `{ fixed = "auto" }` and crashed `axis_size`; the popups auto-fit their content instead.)
+        width = 0.8, -- installer popups are a fixed 0.8 wide (the install/decline prompt overrides to 0.9)
         filetype = "lvim-installer-ui",
-        close_keys = { "q", "<Esc>" },
-        markview = false,
 
         icons = {
             bool_on = "󰄬",
