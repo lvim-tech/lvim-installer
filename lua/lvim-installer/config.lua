@@ -5,7 +5,7 @@
 ---@module "lvim-installer.config"
 
 ---@class LvimInstallerConfig
----@field popup_global table   Passed verbatim to lvim-utils.ui.new()
+---@field popup_global table   Passed verbatim to lvim-ui.new()
 ---@field prompt       table   Unified prompt appearance (title_icon, snooze_ms, width)
 ---@field progress     table   Progress channel appearance (name, icon, spinner, header_hl)
 ---@field update_concurrency integer  Plugins updated at once during "Update all"
@@ -88,7 +88,7 @@ return {
         done_ttl = 4000,
     },
     popup_global = {
-        -- Passed verbatim to lvim-utils.ui.new() as per-open DEFAULTS. Only lvim-installer-SPECIFIC values live
+        -- Passed verbatim to lvim-ui.new() as per-open DEFAULTS. Only lvim-installer-SPECIFIC values live
         -- here — sizing caps (max_width/max_height), max_items, close_keys, position and markview all come from
         -- the SHARED lvim-utils `config.ui` defaults (the presenters read them), so nothing is duplicated or can
         -- drift. (An earlier `height = "auto"` here — the OLD string size model — reached ui.tabs as

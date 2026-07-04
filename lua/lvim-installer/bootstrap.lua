@@ -56,11 +56,11 @@ local function ensure_theme(fallbacks)
     vim.o.eventignore = save_ei
 end
 
---- lvim-utils.notify available? (the shared progress interface). False on the very
+--- lvim-hud.notify available? (the shared progress interface). False on the very
 --- first install when lvim-utils itself has not been cloned yet.
 ---@return table|nil
 local function notify_mod()
-    local ok, m = pcall(require, "lvim-utils.notify")
+    local ok, m = pcall(require, "lvim-hud.notify")
     if ok and m and m.progress_register and m.progress_update then
         return m
     end
@@ -133,7 +133,7 @@ local function build_lines(missing, status, done_count, total, fi, width, build)
     return lines, marks
 end
 
---- Render + install through the shared lvim-utils.notify progress panel (one interface).
+--- Render + install through the shared lvim-hud.notify progress panel (one interface).
 ---@param specs table[]
 ---@param missing string[]
 ---@param nm table
@@ -337,7 +337,7 @@ function M.install(specs, opts)
     if not nm then
         -- First-ever install: the UI itself is not cloned yet. Bootstrap the render set
         -- (lvim-utils + colorscheme + their deps) FIRST, silently, then render the rest
-        -- through lvim-utils.notify — lazy.nvim's "clone the manager first" model.
+        -- through lvim-hud.notify — lazy.nvim's "clone the manager first" model.
         local ui_specs = closure_specs(specs, { "lvim-utils", "lvim-colorscheme" })
         if #ui_specs > 0 then
             pcall(vim.pack.add, ui_specs, { load = true, confirm = false })

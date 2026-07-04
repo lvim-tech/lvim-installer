@@ -1,5 +1,5 @@
 -- lvim-installer: install progress panel.
--- Drives a named lvim-utils.notify progress channel: one floating panel showing
+-- Drives a named lvim-hud.notify progress channel: one floating panel showing
 -- a braille spinner and per-tool status (pending / ok / fail) plus the latest
 -- action line.  Falls back to a single vim.notify summary when lvim-utils is
 -- unavailable.
@@ -11,7 +11,7 @@ local M = {}
 
 ---@return table|nil
 local function notify_mod()
-    local ok, m = pcall(require, "lvim-utils.notify")
+    local ok, m = pcall(require, "lvim-hud.notify")
     return ok and m or nil
 end
 

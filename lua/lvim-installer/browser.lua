@@ -15,8 +15,8 @@ local config = require("lvim-installer.config")
 local progress = require("lvim-installer.progress")
 local ui_mod = require("lvim-installer.ui")
 local snapshot = require("lvim-installer.snapshot")
-local ui_filters = require("lvim-utils.ui.filters")
-local surface = require("lvim-utils.ui.surface")
+local ui_filters = require("lvim-ui.filters")
+local surface = require("lvim-ui.surface")
 local M = {}
 
 --- Tab definitions.  Mason tabs filter the registry by category; parser/plugin
@@ -943,7 +943,7 @@ local function bar_btn_style()
     }
 end
 
---- The filter bar — built through the SHARED filter-group model (lvim-utils.ui.filters), identical to the
+--- The filter bar — built through the SHARED filter-group model (lvim-ui.filters), identical to the
 --- picker's. Optional `items` + `match(item, mode)` drive a live per-mode COUNT. Activation sets the mode and
 --- refreshes ("Search" prompts first).
 ---@param tab_id string
