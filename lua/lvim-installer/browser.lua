@@ -313,20 +313,21 @@ local function reinstall_menu(name, info)
         local cur_conv = (rt == "tag") and ctx or nil
 
         local function finish(ref, conv)
-            local err = pkg.plugin_checkout(name, ref)
-            if err then
-                vim.notify("Checkout failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
-            else
-                -- A tag or commit is an explicit, fixed version → pin. "Latest" / a branch
-                -- tip is "follow latest", so it clears the pin instead of recording one.
-                if conv.reftype == "tag" or conv.reftype == "commit" then
-                    pkg.pin("plugin", name, conv.version, conv.reftype, conv.branch)
+            pkg.plugin_checkout(name, ref, function(err)
+                if err then
+                    vim.notify("Checkout failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
                 else
-                    pkg.unpin("plugin", name)
+                    -- A tag or commit is an explicit, fixed version → pin. "Latest" / a branch
+                    -- tip is "follow latest", so it clears the pin instead of recording one.
+                    if conv.reftype == "tag" or conv.reftype == "commit" then
+                        pkg.pin("plugin", name, conv.version, conv.reftype, conv.branch)
+                    else
+                        pkg.unpin("plugin", name)
+                    end
+                    vim.notify(name .. " → " .. ref)
                 end
-                vim.notify(name .. " → " .. ref)
-            end
-            M.refresh_open()
+                M.refresh_open()
+            end)
         end
 
         local approach_menu, branch_flow, tag_flow
@@ -523,24 +524,26 @@ local function update_action(name, info)
             local newest = pkg.plugin_resolve_tag(name, pin.branch)
             local cur = pkg.plugin_current(name)
             if newest and (not cur or cur.value ~= newest) then
-                local err = pkg.plugin_checkout(name, newest)
-                if err then
-                    finish("Update failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
-                else
-                    pkg.pin("plugin", name, newest, "tag", pin.branch)
-                    finish(name .. " → " .. newest .. " (newest " .. pin.branch .. ".x)")
-                end
+                pkg.plugin_checkout(name, newest, function(err)
+                    if err then
+                        finish("Update failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
+                    else
+                        pkg.pin("plugin", name, newest, "tag", pin.branch)
+                        finish(name .. " → " .. newest .. " (newest " .. pin.branch .. ".x)")
+                    end
+                end)
             else
                 finish(name .. ": already newest in " .. pin.branch .. ".x")
             end
         elseif rt == "branch" then
-            local err = pkg.plugin_update_branch(name, pin.version)
-            if err then
-                finish("Update failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
-            else
-                pkg.pin("plugin", name, pin.version, "branch", pin.version)
-                finish(name .. ": " .. pin.version .. " updated to tip")
-            end
+            pkg.plugin_update_branch(name, pin.version, function(err)
+                if err then
+                    finish("Update failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
+                else
+                    pkg.pin("plugin", name, pin.version, "branch", pin.version)
+                    finish(name .. ": " .. pin.version .. " updated to tip")
+                end
+            end)
         elseif rt == "tag" or rt == "commit" then
             finish(name .. " is fixed (" .. rt .. " " .. tostring(pin.version) .. ") — use Reinstall")
         else
@@ -549,21 +552,24 @@ local function update_action(name, info)
             -- Update gave the "Checking…" feedback and then nothing.)
             local cur = pkg.plugin_current(name)
             if cur and cur.kind == "branch" then
-                local err = pkg.plugin_update_branch(name, cur.value)
-                finish(
-                    err and ("Update failed for " .. name .. ": " .. err)
-                        or (name .. ": " .. cur.value .. " updated to tip"),
-                    err and vim.log.levels.ERROR or nil
-                )
+                pkg.plugin_update_branch(name, cur.value, function(err)
+                    finish(
+                        err and ("Update failed for " .. name .. ": " .. err)
+                            or (name .. ": " .. cur.value .. " updated to tip"),
+                        err and vim.log.levels.ERROR or nil
+                    )
+                end)
             elseif cur and cur.kind == "commit" then
                 -- Un-pinned commit → advance on the default branch.
                 local default = pkg.plugin_default_branch(name)
                 if default then
-                    local err = pkg.plugin_update_branch(name, default)
-                    finish(
-                        err and ("Update failed for " .. name .. ": " .. err) or (name .. ": advanced on " .. default),
-                        err and vim.log.levels.ERROR or nil
-                    )
+                    pkg.plugin_update_branch(name, default, function(err)
+                        finish(
+                            err and ("Update failed for " .. name .. ": " .. err)
+                                or (name .. ": advanced on " .. default),
+                            err and vim.log.levels.ERROR or nil
+                        )
+                    end)
                 else
                     finish(name .. ": no default branch to advance")
                 end
