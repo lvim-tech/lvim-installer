@@ -48,6 +48,22 @@ function M.check()
         h.warn(":LvimInstaller not registered — call require('lvim-installer').setup()")
     end
 
+    -- ── dock integration ──────────────────────────────────────────────────────
+    -- The browser docks through the shared lvim-utils dock stack when `dock_stack` is true (cyclable
+    -- <Leader>n/p/x/m, one-visible-per-layout); false = geometry-only standalone. Either way its size comes
+    -- from the central dock geometry, so the dock module presence is worth reporting.
+    local ok_dock = pcall(require, "lvim-utils.dock")
+    if ok_dock then
+        h.ok(
+            ("dock: lvim-utils.dock found — browser opens %s"):format(
+                config.dock.dock_stack ~= false and "as a managed stack consumer (dock_stack=true)"
+                    or "standalone (dock_stack=false)"
+            )
+        )
+    else
+        h.warn("dock: lvim-utils.dock not found — the browser opens un-managed (no stack cycling)")
+    end
+
     -- ── config shape ──────────────────────────────────────────────────────────
     local ei_ok = type(config.ensure_installed) == "table"
     local uc_ok = type(config.update_concurrency) == "number"

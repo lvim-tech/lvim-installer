@@ -11,25 +11,42 @@
 ---@field update_concurrency integer  Plugins updated at once during "Update all"
 ---@field ensure_installed string[]  Mason tools to install silently at setup (allowlist)
 ---@field browser     table   The Package Manager panel: `layout` = "area"|"float"|"bottom"
+---@field dock        LvimInstallerDockConfig  Dock integration (namespaced like lvim-dependencies' `config.dock`)
 ---@field tab_icons   table<string,string>  Browser tab-bar icons keyed by tab id (Nerd Font glyphs)
 ---@field action_icons table<string,string>  Inline action-row icons keyed by action label (Nerd Font glyphs)
 ---@field field_icons  table<string,string>  Inline detail-row icons keyed by field name (Nerd Font glyphs)
+
+---@class LvimInstallerDockConfig
+---@field dock_stack boolean true = the browser is a managed dock-STACK consumer; false = geometry-only standalone
+---@field force      table   Per-layout ANCHORED geometry overrides `{ float, area, bottom }` deep-merged over the central dock geometry
 
 ---@type LvimInstallerConfig
 return {
     -- Mason tools (LSP / DAP / linter / formatter) to install silently at setup.
     ensure_installed = {},
     -- The Package Manager browser (the tabbed panel) — HOW it opens:
-    --   "float"  — a centred modal window (width 0.9 of the screen). DEFAULT.
+    --   "float"  — a centred modal window. DEFAULT.
     --   "area"   — the cmdline / minibuffer dock shared by the fzf pickers + LvimLsp nav (grows cmdheight,
     --              chrome/heirline above; the toolbars are C-j/C-k header sectors).
     --   "bottom" — a bottom dock floating over the last rows.
+    -- Only `layout` lives here — the browser holds NO size of its own. The slot geometry of each layout
+    -- (float width/height, area / bottom height) is the SINGLE central authority `lvim-utils.config.dock.geometry`,
+    -- edited live from control-center's "Utils" panel; the browser resolves its slot via `lvim-utils.dock.slot`.
     browser = {
         layout = "float",
-        width = 0.9, -- (float layout) fraction of the screen wide
-        -- (area layout) the docked content-row budget — it scrolls past this. ~30% taller than ui.tabs' own
-        -- default of 16 rows, since this is a full browser rather than a small prompt.
-        height = 21,
+    },
+    -- Dock integration, namespaced under `dock` (matching lvim-dependencies' `config.dock.*`).
+    dock = {
+        -- true = the browser is a full dock-STACK consumer (managed: cyclable <Leader>n/p/x/m, :LvimDock,
+        -- one-visible-per-layout, no overlap with other docked UIs); false = geometry-only (the central dock.slot
+        -- still sizes it + draws the backdrop, but it opens STANDALONE and is NOT registered in the stack).
+        dock_stack = true,
+        -- Per-plugin per-layout ANCHORED geometry overrides, deep-merged per field OVER the global
+        -- `lvim-utils.config.dock.geometry.<layout>`; an empty {} = inherit the global unchanged. Each layout may
+        -- carry: height, height_auto, backdrop = { enabled, mode, dim = { amount }, darken = { amount } }, auto_hide,
+        -- keep_focus. FLOAT ALSO: width, width_auto. area/bottom are ALWAYS full-width — NO width/width_auto (ignored
+        -- if set). Applies in BOTH dock_stack modes (even standalone forces its own size / backdrop).
+        force = { float = {}, area = {}, bottom = {} },
     },
     -- Browser tab-bar icons, keyed by tab id. Nerd Font glyphs (verified single-width) — override any to taste.
     tab_icons = {
@@ -94,8 +111,9 @@ return {
         -- drift. (An earlier `height = "auto"` here — the OLD string size model — reached ui.tabs as
         -- `{ fixed = "auto" }` and crashed `axis_size`; the popups auto-fit their content instead.)
         -- No `width` either: the small child popups (Delete/Reinstall/… confirm menus) AUTO-FIT their content.
-        -- The BROWSER passes its own `config.browser.width` and the install/decline prompts force their own size,
-        -- so nothing here needs a shared fixed width (a leftover 0.8 only forced the confirm menus too wide).
+        -- The BROWSER takes its slot from the central `lvim-utils.config.dock.geometry` and the install/decline
+        -- prompts force their own size, so nothing here needs a shared fixed width (a leftover 0.8 only forced
+        -- the confirm menus too wide).
         filetype = "lvim-installer-ui",
 
         icons = {

@@ -101,7 +101,11 @@ Lua: >lua
 `setup(opts)` deep-merges into the live defaults (|LvimInstallerConfig|): >lua
   require("lvim-installer").setup({
       prompt = { title_icon = "󰏗 ", snooze_ms = 5 * 60 * 1000, width = 0.9 },
-      browser = { layout = "float", width = 0.9, height = 21 },
+      browser = { layout = "float" },
+      dock = {
+          dock_stack = true,   -- managed dock-stack consumer (false = standalone)
+          force = { float = {}, area = {}, bottom = {} },  -- per-layout geometry override
+      },
       tab_icons = { plugin = "󰏖", LSP = "󰒋", snapshot = "󰄄", ... },
       action_icons = { Update = "󰑐", Remove = "󰆴", ["Open source URL"] = "󰏌" },
       field_icons = { Status = "󰑐", Version = "󰓹", Source = "󰘬", ... },
@@ -112,8 +116,19 @@ Lua: >lua
   })
 <
   prompt              first-open prompt: title_icon, snooze_ms, width
-  browser             how the manager opens: layout (float|area|bottom),
-                      width, height
+  browser             how the manager opens: layout (float|area|bottom);
+                      slot size comes from the central lvim-utils dock geometry
+  dock.dock_stack     true = managed dock-STACK consumer (cyclable
+                      <Leader>n/p/x/m, :LvimDock, one-visible-per-layout;
+                      keyed per (id, layout) so the browser can be docked in
+                      float, area AND bottom at once — one window / one dock
+                      entry per layout, re-opening a layout re-shows its window);
+                      false = geometry-only standalone (NOT in the stack)
+  dock.force          per-layout ANCHORED geometry overrides {float,area,
+                      bottom} deep-merged over the central dock geometry; an
+                      empty {} inherits it. FLOAT may force width/height/
+                      *_auto/backdrop; area/bottom are always full-width.
+                      Applies in BOTH dock_stack modes
   tab_icons           browser tab-bar icons, keyed by tab id
   action_icons        browser inline action-row icons, keyed by action label
   field_icons         browser inline detail-row icons, keyed by field name

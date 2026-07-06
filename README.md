@@ -65,30 +65,6 @@ else from the manager:
 :LvimInstaller plugins
 ```
 
-### lazy.nvim
-
-```lua
-return {
-    "lvim-tech/lvim-installer",
-    dependencies = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
-    config = function()
-        require("lvim-installer").setup({})
-    end,
-}
-```
-
-### packer.nvim
-
-```lua
-use({
-    "lvim-tech/lvim-installer",
-    requires = { "lvim-tech/lvim-pkg", "lvim-tech/lvim-utils" },
-    config = function()
-        require("lvim-installer").setup({})
-    end,
-})
-```
-
 ### Native (vim.pack)
 
 This is the whole package manager — no external plugin manager needed. Bootstrap the
@@ -177,11 +153,27 @@ require("lvim-installer").setup({
         width = 0.9, -- fraction of the screen wide for both prompt popups
     },
 
-    -- The package-manager browser: how it opens.
+    -- The package-manager browser: how it opens. Its slot size (float width/height, area / bottom height)
+    -- comes from the central lvim-utils dock geometry, edited from control-center's "Utils" panel.
     browser = {
         layout = "float", -- "float" (centred modal) | "area" (cmdline/minibuffer dock) | "bottom" (bottom dock)
-        width = 0.9, -- (float) fraction of the screen wide
-        height = 21, -- (area) the docked content-row budget; it scrolls past this
+    },
+
+    -- Dock integration, namespaced under `dock` (matching lvim-dependencies' config.dock.*).
+    dock = {
+        -- true = the browser is a full dock-STACK consumer (managed: cyclable <Leader>n/p/x/m, :LvimDock,
+        -- one-visible-per-layout, no overlap with other docked UIs); false = geometry-only (still sized + backdropped
+        -- by the central dock.slot, but opens standalone, NOT registered in the stack). As a managed consumer the
+        -- dock keys the browser per (id, layout), so it can be docked in float, area AND bottom at once — one live
+        -- window / one dock entry PER layout — while re-opening the SAME layout just re-shows that one window.
+        dock_stack = true,
+
+        -- Per-layout ANCHORED geometry overrides, deep-merged per field over the global
+        -- lvim-utils.config.dock.geometry.<layout>; an empty {} inherits the global unchanged. Each layout may carry:
+        -- height, height_auto, backdrop = { enabled, mode, dim = { amount }, darken = { amount } }, auto_hide,
+        -- keep_focus. FLOAT ALSO: width, width_auto. area / bottom are ALWAYS full-width (width ignored). Applies in
+        -- BOTH dock_stack modes.
+        force = { float = {}, area = {}, bottom = {} },
     },
 
     -- Browser tab-bar icons, keyed by tab id (Nerd Font glyphs).
@@ -234,7 +226,9 @@ require("lvim-installer").setup({
 | Section | Responsible for |
 |---|---|
 | `prompt` | the first-open "missing tools" prompt: title icon, snooze duration, width |
-| `browser` | how the manager opens: `layout` (`float` \| `area` \| `bottom`), `width`, `height` |
+| `browser` | how the manager opens: `layout` (`float` \| `area` \| `bottom`); its size comes from the central lvim-utils dock geometry |
+| `dock.dock_stack` | `true` = managed dock-stack consumer (cyclable `<Leader>n/p/x/m`, `:LvimDock`, one-visible-per-layout; keyed per `(id, layout)` so it can be docked in float, area AND bottom at once — one window per layout); `false` = geometry-only standalone (not in the stack) |
+| `dock.force` | per-layout anchored geometry overrides (`float`/`area`/`bottom`) deep-merged over the central dock geometry; empty `{}` inherits it. Applies in both `dock_stack` modes |
 | `tab_icons` | the browser tab-bar icons, keyed by tab id |
 | `action_icons` | the browser's inline action-row icons, keyed by action label |
 | `field_icons` | the browser's inline detail-row icons, keyed by field name |

@@ -44,12 +44,84 @@ local state = {
     filters = {},
     filter_modes = {},
     active = "plugin",
-    pending = nil,
     expanded = {},
     git_expanded = {},
     active_ops = {},
     updating_all = false,
 }
+
+-- Per-LAYOUT window slots. The shared dock-stack manager (lvim-utils.dock) keys every entry by
+-- (id, LAYOUT): the browser's stable `id = "lvim-installer"` is its base identity, and the SAME id
+-- opened in a DIFFERENT layout is a SEPARATE entry in that other layout's stack. So the browser can be
+-- docked in float, bottom AND area SIMULTANEOUSLY — three live windows, one entry in each stack — while
+-- re-opening the SAME (id, layout) RE-SHOWS the one window. That is why every WINDOW-level piece of state
+-- lives HERE, one slot per layout; the SHARED browse model above (active tab, filters, expanded rows, tab
+-- counts, in-flight ops) stays in `state` and is mirrored by EVERY open window (each is a VIEW of it, with
+-- its own tabs array — a ui.tabs handle owns the array it was built with, so each window rebuilds its own).
+---@class LvimInstallerPanel
+---@field handle table|nil        This layout's ui.tabs handle (the live window)
+---@field tabs table[]|nil        This window's tabs array (the handle references it; rebuilt in place on refresh)
+---@field panel_buf integer|nil   This window's content buffer — the dock installs its leader owner here (buffers())
+---@field panel_win integer|nil   This window's content window — the dock focus() / is_current() target
+---@field dock_alive boolean|nil  This entry is live/parked (true) vs killed by <Leader>x (false) — drives is_alive
+---@field dock_teardown boolean|nil  This window is being torn down BY the dock (park/close) — its close callback must NOT re-notify
+---@field key string|nil          The dock ENTRY KEY (id, layout) returned by dock.open — passed back to the lifecycle APIs
+---@field pending function|nil    A callback to run once THIS window has closed
+---@field consumer table|nil      Memoised LvimDockConsumer handle for this layout (`id` = base identity, `layout` fixed)
+---@type table<string, LvimInstallerPanel>
+local panels = {}
+
+--- Lazily create + return the per-layout window slot. An open in float and an open in bottom are wholly
+--- independent live entries (own window / own dock key), so neither orphans the other's window.
+---@param layout string  "float"|"area"|"bottom"
+---@return LvimInstallerPanel
+local function panel(layout)
+    panels[layout] = panels[layout] or {}
+    return panels[layout]
+end
+
+--- Call `fn(p, layout)` for every layout whose window is currently LIVE (a valid handle). The refresh /
+--- spinner / update paths use this: a browse-model change must re-render EVERY open window (the browser can
+--- be docked in several layouts at once), not just one.
+---@param fn fun(p: LvimInstallerPanel, layout: string)
+local function each_live_panel(fn)
+    for layout, p in pairs(panels) do
+        if p.handle and p.handle.valid() then
+            fn(p, layout)
+        end
+    end
+end
+
+--- Whether ANY layout's window is currently live — the "is the browser open at all?" guard.
+---@return boolean
+local function any_open()
+    for _, p in pairs(panels) do
+        if p.handle and p.handle.valid() then
+            return true
+        end
+    end
+    return false
+end
+
+--- The cross-plugin dock-stack manager (lvim-utils.dock), or nil when unavailable. Cached like the other
+--- consumers (nil = unprobed, false = probed & absent). pcall-guarded because it is a cross-plugin optional.
+---@type table|false|nil
+local dock_mod = nil
+--- @return table?  the dock manager, or nil (then the browser opens standalone, un-managed)
+local function get_dock()
+    if dock_mod == nil then
+        local ok, m = pcall(require, "lvim-utils.dock")
+        dock_mod = ok and m or false
+    end
+    return dock_mod or nil
+end
+
+--- The layout the browser opens in for THIS session: a per-command override (`:LvimInstaller area`) →
+--- `config.browser.layout` → "float".
+---@return "float"|"area"|"bottom"
+local function current_layout()
+    return state.layout or (config.browser or {}).layout or "float"
+end
 
 --- Per-tab search text and filter mode — a search or mode set on one tab must NOT leak to
 --- another (the tabs share one window but distinct catalogues). Keyed by tab id.
@@ -770,12 +842,16 @@ local function focus_action(name, action)
             end
         end
     end
-    for _, tab in ipairs(state.tabs or {}) do
-        walk(tab.rows)
-    end
-    if state.handle and state.handle.focus then
-        state.handle.focus("pa_" .. name)
-    end
+    -- The row tables are per-window (each ui.tabs handle owns its own tabs array), so expand + focus the
+    -- action bar in EVERY open window — the browser may be docked in several layouts at once.
+    each_live_panel(function(p)
+        for _, tab in ipairs(p.tabs or {}) do
+            walk(tab.rows)
+        end
+        if p.handle.focus then
+            p.handle.focus("pa_" .. name)
+        end
+    end)
 end
 
 --- Word-wrap `text` to `width` columns (hard-breaking words longer than width,
@@ -1085,7 +1161,7 @@ local function plugin_rows(tab)
     if not state.tags_requested then
         state.tags_requested = true
         pkg.load_tags(function()
-            if state.handle and state.handle.valid() then
+            if any_open() then
                 M.refresh_open()
             end
         end)
@@ -1796,22 +1872,22 @@ local function rows_for(tab)
     return {}
 end
 
---- Open (or re-open) the package-manager browser at a specific tab, in a specific layout.
----@param tab_id? string  the tab to open at (e.g. "LSP", "parser", "plugin")
----@param layout? string  "area"|"float"|"bottom" — overrides config.browser.layout for the session
+--- Render (or re-render) the tabs browser window for ONE layout, assigning the handle into that layout's
+--- slot (`panel(layout)`). `slot` is the resolved `LvimDockSlot` to size the window to (from `dock.slot(layout,
+--- force)`) — nil lets ui.tabs derive the central geometry itself; `backdrop` is the per-layout force backdrop
+--- override. The browse model (active tab, filters, expanded rows) lives in the SHARED `state`, so a rebuild
+--- restores the panel exactly; the per-window `tabs` array it renders is kept in `panel(layout).tabs`.
+---@param layout string    "float"|"area"|"bottom" — which layout's window this renders (its own slot)
+---@param slot? table       the resolved dock slot (cells) — the outer window size
+---@param backdrop? table|false  the per-layout `config.dock.force[layout].backdrop` override
 ---@return nil
-function M.open(tab_id, layout)
-    if tab_id then
-        state.active = tab_id
-    end
-    if layout then
-        state.layout = layout -- sticky: a per-command override survives pending re-opens this session
-    end
+local function render_browser(layout, slot, backdrop)
     local ui = ui_mod.get()
     if not ui then
         vim.notify("lvim-installer: lvim-utils UI unavailable", vim.log.levels.ERROR)
         return
     end
+    local p = panel(layout)
     local tabs = {}
     local sel = 1
     for i, tab in ipairs(TABS) do
@@ -1820,10 +1896,10 @@ function M.open(tab_id, layout)
             sel = i
         end
     end
-    -- Keep references so async operations (e.g. update progress) can mutate the
-    -- live rows and re-render without closing the window.
-    state.tabs = tabs
-    state.handle = ui.tabs({
+    -- Keep this window's OWN tabs array so async operations (e.g. update progress) can mutate its
+    -- live rows and re-render without closing the window. Each open layout has its own array.
+    p.tabs = tabs
+    p.handle = ui.tabs({
         title = "Package Manager",
         -- The title counter (visible / total for the active tab) — the chassis renders it on the top
         -- border (right-aligned, opposite the title); populated by the row builders into state.tab_counts.
@@ -1833,32 +1909,39 @@ function M.open(tab_id, layout)
         tabs = tabs,
         -- How the panel opens: a per-command override (`:LvimInstaller area`) → `config.browser.layout` →
         -- "float". "float" = a centred modal; "area" = the cmdline/minibuffer dock shared by the fzf pickers +
-        -- LvimLsp nav; "bottom" = a bottom dock.
-        layout = state.layout or (config.browser or {}).layout or "float",
+        -- LvimLsp nav; "bottom" = a bottom dock. This window renders in THE layout it was opened for.
+        layout = layout,
         tab_selector = sel,
         -- Tabs are managed only from the header (press "t"); content keys never jump
         -- to or switch tabs.
         lock_tabs = true,
         -- The bottom key-hint LEGEND (panel keys • focused-row keys), same as the control center.
         footer_hints = true,
-        -- Use most of the screen — this is a full browser, not a small prompt.
-        width = config.browser.width,
-        max_width = config.browser.width,
-        height = 0.9,
-        max_height = 0.9,
-        -- (area layout) the docked row budget — taller than ui.tabs' default 16 for this full browser
-        area_height = (config.browser or {}).height or 21,
+        -- The browser's OUTER slot (float width/height, area / bottom height) comes from the SINGLE geometry
+        -- authority `lvim-utils.config.dock.geometry`, resolved via `lvim-utils.dock.slot(layout)`. In stack mode
+        -- this `slot` is the manager-supplied `ctx.rect`; standalone it is `dock.slot(layout, force[layout])`
+        -- computed by `M.open`. Either way the per-layout `force` override (empty {} = inherit) is already folded
+        -- in. `backdrop` forces this layout's veil. Only the INTERNAL content-fit (`max_items`) stays here.
+        slot = slot,
+        backdrop = backdrop,
         -- a BG-only cursorline so the active row keeps its per-part colours (no fg wash)
         cursorline_hl = "LvimUiCursorLine",
         max_items = 40,
         -- Plugin shortcuts: R reinstall/update, D delete, B browse — act on the
         -- plugin under the cursor (the plugin row or any of its detail/action rows).
-        on_open = function(buf)
+        on_open = function(buf, win)
+            -- Capture the content buffer + window so the dock consumer can install its buffer-local `<Leader>`
+            -- owner (buffers()), focus the panel (focus()), and answer whether it owns the current window
+            -- (is_current()). The browser's own keys below are non-leader (r/i/u/d/b), so they never clash with
+            -- the dock's `<Leader>n/p/x/m`.
+            p.panel_buf = buf
+            p.panel_win = win
             -- A key may act on a plugin row or a Mason package row; dispatch by which
-            -- one is under the cursor.
+            -- one is under the cursor. The keys are set on THIS window's buffer, so they query THIS
+            -- window's handle (`p.handle`) — the row under the cursor in the window the key was pressed in.
             local function dispatch(plugin_act, mason_act, parser_act)
                 return function()
-                    local row = state.handle and state.handle.cursor_name and state.handle.cursor_name()
+                    local row = p.handle and p.handle.cursor_name and p.handle.cursor_name()
                     local pname = plugin_from_row(row)
                     if pname and plugin_act then
                         focus_action(pname, plugin_act)
@@ -1867,16 +1950,16 @@ function M.open(tab_id, layout)
                     end
                     local mname = mason_from_row(row)
                     if mname and mason_act then
-                        if state.handle.focus then
-                            state.handle.focus("ma_" .. mname)
+                        if p.handle.focus then
+                            p.handle.focus("ma_" .. mname)
                         end
                         mason_action(mname, mason_act)
                         return
                     end
                     local tname = parser_from_row(row)
                     if tname and parser_act then
-                        if state.handle.focus then
-                            state.handle.focus("ta_" .. tname)
+                        if p.handle.focus then
+                            p.handle.focus("ta_" .. tname)
                         end
                         parser_action(tname, parser_act)
                     end
@@ -1895,11 +1978,27 @@ function M.open(tab_id, layout)
             setkey({ "b", "B" }, dispatch("browse", "browse", nil), "Browse homepage / source")
         end,
         callback = function()
-            state.handle = nil
-            local p = state.pending
-            state.pending = nil
-            if p then
-                vim.schedule(p)
+            p.handle = nil
+            p.tabs = nil
+            p.panel_buf = nil
+            p.panel_win = nil
+            -- SELF-DISMISS (the user pressed q / <Esc>): when the browser is a stack consumer AND this close was
+            -- NOT a manager-driven park/close (`dock_teardown`), tell the dock THIS layout's entry PARKED (by its
+            -- stored KEY) — the layout collapses and the entry stays cyclable (its browse state survives in the
+            -- shared `state`). `dock_teardown` is set by the consumer's hide/close, so a manager park never
+            -- re-notifies. Mirrors control-center's per-(id, layout) `on_panel_closed`.
+            local teardown = p.dock_teardown
+            p.dock_teardown = false
+            if not teardown and config.dock.dock_stack and p.dock_alive and p.key then
+                local d = get_dock()
+                if d then
+                    pcall(d.parked, p.key)
+                end
+            end
+            local pend = p.pending
+            p.pending = nil
+            if pend then
+                vim.schedule(pend)
             end
         end,
     })
@@ -1912,10 +2011,118 @@ function M.open(tab_id, layout)
     end
 end
 
---- Find a top-level row by name across all open tabs (plugin rows live here).
+--- Build (once, memoised in `panel(layout).consumer`) + return the browser's dock consumer FOR ONE LAYOUT —
+--- an `LvimDockConsumer` (the lvim-utils.dock contract; a cross-plugin type, annotated `table`). `id` is the
+--- UNCHANGED base identity `"lvim-installer"` (layout is NOT baked into it; the dock composes the (id, layout)
+--- key), so the SAME id can be open in every layout at once — ONE consumer PER layout, each with a fixed
+--- `layout` and each callback reading / writing `panel(layout)`. `show(ctx)` renders this layout's window at
+--- `ctx.rect`; `hide` PARKS it (closes the window, keeps the SHARED browse state, so `show` rebuilds it
+--- exactly); `close` (`<Leader>x`) drops this layout's entry; `is_alive` tracks whether it was killed. The
+--- browser's own sub-detail windows (the mason / parser confirm menus, the filter input, the install prompts)
+--- are transient popups spawned FROM this panel — they belong to this entry, not the stack, so they are handled
+--- inside show/close, never as separate dock entries. `slot` is refreshed per open (the per-layout force override).
+---@param layout string  "float"|"area"|"bottom"
+---@return table  the LvimDockConsumer handle for this layout
+local function get_consumer(layout)
+    local p = panel(layout)
+    if not p.consumer then
+        p.consumer = {
+            id = "lvim-installer", -- base identity, UNCHANGED across layouts — the dock keys the entry by (id, layout)
+            name = "package manager",
+            icon = config.progress.icon, -- 󰏗 (verified single-width Nerd glyph)
+            layout = layout, -- which stack THIS entry joins (fixed for this per-layout consumer)
+            show = function(ctx)
+                -- A dock-driven show (open / cycle-back / restore): rebuild THIS layout's window from the shared
+                -- `state` + config at the manager-supplied rect. Clear the teardown flag so the rebuilt panel's
+                -- close callback parks normally again; mark the entry alive.
+                p.dock_teardown = false
+                p.dock_alive = true
+                -- Already visible (a re-`open` of the same (id, layout) entry MRU-bumps it without hiding first):
+                -- keep the live window — its content is unchanged — instead of opening a second one over it.
+                if p.handle and p.handle.valid() then
+                    return
+                end
+                render_browser(layout, ctx and ctx.rect, (config.dock.force[layout] or {}).backdrop)
+            end,
+            hide = function()
+                -- PARK: close this layout's window, KEEP the shared browse state (restored on `show`). Flag the
+                -- teardown so the tabs `callback` does NOT re-notify the dock (a manager park, not a self-dismiss).
+                if p.handle and p.handle.valid() then
+                    p.dock_teardown = true
+                    p.handle.close()
+                end
+            end,
+            close = function()
+                -- `<Leader>x` — kill THIS layout's dock entry: tear its visible window down and drop it from the
+                -- stack. The shared browse state stays (the command reopens it); this layout's OTHER entries are
+                -- untouched — only this (id, layout) entry is removed.
+                p.dock_alive = false
+                if p.handle and p.handle.valid() then
+                    p.dock_teardown = true
+                    p.handle.close()
+                end
+            end,
+            is_alive = function()
+                return p.dock_alive == true
+            end,
+            focus = function()
+                if p.panel_win and vim.api.nvim_win_is_valid(p.panel_win) then
+                    pcall(vim.api.nvim_set_current_win, p.panel_win)
+                end
+            end,
+            buffers = function()
+                if p.panel_buf and vim.api.nvim_buf_is_valid(p.panel_buf) then
+                    return { p.panel_buf }
+                end
+                return {}
+            end,
+            is_current = function()
+                return p.panel_win ~= nil
+                    and vim.api.nvim_win_is_valid(p.panel_win)
+                    and vim.api.nvim_get_current_win() == p.panel_win
+            end,
+        }
+    end
+    p.consumer.slot = config.dock.force[layout] -- the ANCHORED override → `do_show` feeds it to `dock.slot`
+    return p.consumer
+end
+
+--- Open (or re-open) the package-manager browser at a specific tab, in a specific layout.
+--- When `config.dock.dock_stack` is true (and the dock manager is present) the open is ROUTED THROUGH the dock
+--- stack (`dock.open` parks any other consumer visible in the layout → zero overlap, and the entry joins
+--- `<Leader>n/p/x/m` + `:LvimDock`). Otherwise it opens STANDALONE — still sized from the central geometry +
+--- the per-layout `dock.force` override (`dock.slot(layout, dock.force[layout])`), just NOT registered in the stack.
+---@param tab_id? string  the tab to open at (e.g. "LSP", "parser", "plugin")
+---@param layout? string  "area"|"float"|"bottom" — overrides config.browser.layout for the session
+---@return nil
+function M.open(tab_id, layout)
+    if tab_id then
+        state.active = tab_id
+    end
+    if layout then
+        state.layout = layout -- sticky: a per-command override survives pending re-opens this session
+    end
+    local L = current_layout()
+    local d = get_dock()
+    if config.dock.dock_stack and d then
+        -- Managed: registered in L's stack, one-visible-per-layout. STORE the returned ENTRY KEY (id, L) in
+        -- THIS layout's slot — the lifecycle notifications (`parked`) for this entry take that key back. Re-opening
+        -- the same (id, L) returns the same key and RE-SHOWS the one window (never a duplicate in that stack).
+        panel(L).key = d.open(get_consumer(L))
+        return
+    end
+    -- Standalone (dock_stack = false, or the dock manager unavailable): size from the central geometry + the
+    -- per-layout force override, but do NOT register in the stack (the pre-dock-stack behaviour).
+    panel(L).dock_alive = true
+    render_browser(L, d and d.slot(L, config.dock.force[L]) or nil, (config.dock.force[L] or {}).backdrop)
+end
+
+--- Find a top-level row by name within a window's `tabs` array (plugin rows live here). Each open window
+--- owns its OWN row tables, so the caller passes the tabs of the window it is updating.
+---@param tabs table[]|nil  a window's tabs array (`panel(layout).tabs`)
 ---@param rowname string
 ---@return table|nil
-local function find_row(rowname)
+local function find_row(tabs, rowname)
     -- Plugin rows are nested under the section rows, so search children too.
     local function walk(list)
         for _, r in ipairs(list or {}) do
@@ -1930,7 +2137,7 @@ local function find_row(rowname)
             end
         end
     end
-    for _, tab in ipairs(state.tabs or {}) do
+    for _, tab in ipairs(tabs or {}) do
         local found = walk(tab.rows)
         if found then
             return found
@@ -1979,34 +2186,34 @@ row_spinner = function(rowname, verb)
             vim.notify(msg, level)
         end
     end
-    local row = find_row(rowname)
-    if row and timer then
-        row.icon_hl = "LvimInstallerProgress"
-        row.text_hl = "LvimInstallerProgress"
+    if timer and any_open() then
         timer:start(
             0,
             90,
             vim.schedule_wrap(function()
-                -- Re-resolve the row by name every tick: a concurrent refresh_open replaces the row
-                -- tables wholesale, so a captured reference would go stale (spinner mutating an orphan
-                -- while the visible row snaps back to idle). Re-apply the progress tint on the fresh row.
-                row = find_row(rowname)
-                if not row then
-                    stop_spinner()
-                    return
-                end
-                row.icon_hl = "LvimInstallerProgress"
-                row.text_hl = "LvimInstallerProgress"
-                row.label = frames[fi] .. "  " .. status_txt
-                fi = fi % #frames + 1
-                if state.handle and state.handle.valid() then
-                    state.handle.render()
-                    pcall(vim.cmd, "redraw")
-                else
+                -- Paint the advancing spinner + progress tint on the row in EVERY open window — the browser
+                -- may be docked in several layouts at once. Re-resolve the row by name in each window's OWN
+                -- tabs every tick: a concurrent refresh_open replaces the row tables wholesale, so a captured
+                -- reference would go stale (spinner mutating an orphan while the visible row snaps back to idle).
+                local painted = false
+                each_live_panel(function(p)
+                    painted = true
+                    local row = find_row(p.tabs, rowname)
+                    if row then
+                        row.icon_hl = "LvimInstallerProgress"
+                        row.text_hl = "LvimInstallerProgress"
+                        row.label = frames[fi] .. "  " .. status_txt
+                    end
+                    p.handle.render()
+                end)
+                if not painted then
                     -- Panel closed mid-op: only the timer stops here. `finish` keeps its once-guard and
                     -- still delivers the result notification later (refresh_open no-ops safely when closed).
                     stop_spinner()
+                    return
                 end
+                fi = fi % #frames + 1
+                pcall(vim.cmd, "redraw")
             end)
         )
     end
@@ -2030,9 +2237,14 @@ local function sync_expanded()
             end
         end
     end
-    for _, tab in ipairs(state.tabs or {}) do
-        walk(tab.rows)
-    end
+    -- The expanded flags live on each window's OWN row tables; capture them from every open window into the
+    -- shared `state.expanded` (the model every window rebuilds from). Windows mirror one model, so a row
+    -- unfolded in one view is unfolded in the others on the next refresh.
+    each_live_panel(function(p)
+        for _, tab in ipairs(p.tabs or {}) do
+            walk(tab.rows)
+        end
+    end)
 end
 
 --- Rebuild every tab's rows and re-render in place.
@@ -2044,30 +2256,34 @@ end
 ---@return nil
 function M.refresh_open(opts)
     opts = opts or {}
-    if not (state.handle and state.handle.valid() and state.tabs) then
+    if not any_open() then
         return
     end
     sync_expanded()
-    local cur, idx
-    if opts.keep_position then
-        idx = state.handle.cursor_index and state.handle.cursor_index()
-    else
-        cur = state.handle.cursor_name and state.handle.cursor_name()
-    end
-    for i, tab in ipairs(TABS) do
-        -- While Update all owns the plugin tab, its progress rows must NOT be rebuilt from the
-        -- catalogue under it (that would swap the animated rows out and fight update_all's own
-        -- draw() — flicker + a stale-geometry recalc). Every other tab still refreshes.
-        if state.tabs[i] and not (state.updating_all and tab.id == "plugin") then
-            state.tabs[i].rows = rows_for(tab)
+    -- Rebuild + re-render EVERY open window (the browser may be docked in several layouts at once); each keeps
+    -- its OWN cursor (by name / screen position) across the rebuild of its OWN tabs array.
+    each_live_panel(function(p)
+        local cur, idx
+        if opts.keep_position then
+            idx = p.handle.cursor_index and p.handle.cursor_index()
+        else
+            cur = p.handle.cursor_name and p.handle.cursor_name()
         end
-    end
-    state.handle.recalc()
-    if idx and state.handle.focus_index then
-        state.handle.focus_index(idx)
-    elseif cur and state.handle.focus then
-        state.handle.focus(cur)
-    end
+        for i, tab in ipairs(TABS) do
+            -- While Update all owns the plugin tab, its progress rows must NOT be rebuilt from the
+            -- catalogue under it (that would swap the animated rows out and fight update_all's own
+            -- draw() — flicker + a stale-geometry recalc). Every other tab still refreshes.
+            if p.tabs[i] and not (state.updating_all and tab.id == "plugin") then
+                p.tabs[i].rows = rows_for(tab)
+            end
+        end
+        p.handle.recalc()
+        if idx and p.handle.focus_index then
+            p.handle.focus_index(idx)
+        elseif cur and p.handle.focus then
+            p.handle.focus(cur)
+        end
+    end)
 end
 
 --- Install or update one Mason package with a live in-popup spinner.
@@ -2111,7 +2327,7 @@ function M.parser_op(name)
     end)
 end
 
---- Plugin-tab index in state.tabs (matches TABS order).
+--- Plugin-tab index in a window's tabs array (matches TABS order).
 ---@return integer|nil
 local function plugin_tab_index()
     for i, t in ipairs(TABS) do
@@ -2129,7 +2345,7 @@ function M.update_all()
     local concurrency = math.max(1, config.update_concurrency or 4)
 
     local function run(targets)
-        if not (state.handle and state.handle.valid()) then
+        if not any_open() then
             return
         end
         if #targets == 0 then
@@ -2182,19 +2398,25 @@ function M.update_all()
         end
 
         function draw()
-            if not (state.handle and state.handle.valid()) then
+            if not any_open() then
                 return finish()
             end
-            if ti and state.tabs[ti] then
-                state.tabs[ti].rows = build()
-            end
+            -- Paint the progress rows into EVERY open window's plugin tab (the browser may be docked in several
+            -- layouts at once); one fresh row set is shared for this frame (rebuilt next tick).
+            local rows = ti and build() or nil
             -- Row count is constant after the first switch, so only recalc once.
-            if first then
-                first = false
-                state.handle.recalc()
-            else
-                state.handle.render()
-            end
+            local do_recalc = first
+            first = false
+            each_live_panel(function(p)
+                if ti and p.tabs[ti] then
+                    p.tabs[ti].rows = rows
+                end
+                if do_recalc then
+                    p.handle.recalc()
+                else
+                    p.handle.render()
+                end
+            end)
         end
 
         function finish()
