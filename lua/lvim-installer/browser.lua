@@ -662,10 +662,16 @@ local function mason_pin_menu(name)
                     sel = v
                 end
             end
+            -- Only a package that is actually INSTALLED has a "current" version to mark: for it, the focused
+            -- row (its pin, or "Latest" when tracking) gets the "(current)" suffix. For a NOT-installed package
+            -- there is nothing current — still focus a sensible default (Latest / the pin) but WITHOUT the
+            -- misleading "(current)" label (`mark_current = false` = focus only, no marker).
+            local installed = pkg.is_installed("mason", name)
             ui.select({
                 title = "Install " .. name .. " — choose version",
                 items = items,
                 current_item = sel,
+                mark_current = installed,
                 callback = function(confirmed, idx)
                     if not confirmed then
                         return
