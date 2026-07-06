@@ -48,6 +48,10 @@ end
 ---@type table<string, boolean>  Filetypes queued for the next flush
 local pending = {}
 local scheduled = false
+---@type string|nil  The filetype whose prompt is CURRENTLY on screen (only one at a time)
+local showing = nil
+---@type string[]  Filetypes waiting for the open prompt to close, shown one at a time
+local queue = {}
 
 --- Queue `ft` for an install prompt, debounced and snooze-aware.
 ---@param ft string
@@ -55,6 +59,9 @@ local scheduled = false
 function M.offer(ft)
     if not ft or ft == "" then
         return
+    end
+    if showing == ft then
+        return -- its prompt is already open; opening a second would double-run the install
     end
     local snooze = state.snoozed[ft]
     if snooze and vim.uv.now() < snooze then
@@ -70,13 +77,29 @@ function M.offer(ft)
     end
 end
 
---- Open one prompt per pending filetype.
+--- Enqueue the pending filetypes and start showing them ONE AT A TIME (a batch of missing
+--- fts must not stack N modals on top of each other — each opens from the previous one's close).
 ---@return nil
 function M.flush()
     local fts = vim.tbl_keys(pending)
     pending = {}
     table.sort(fts)
     for _, ft in ipairs(fts) do
+        if ft ~= showing and not vim.tbl_contains(queue, ft) then
+            queue[#queue + 1] = ft
+        end
+    end
+    M.show_next()
+end
+
+--- Show the next queued filetype prompt, unless one is already open (its close advances the queue).
+---@return nil
+function M.show_next()
+    if showing then
+        return
+    end
+    local ft = table.remove(queue, 1)
+    if ft then
         M.show(ft)
     end
 end
@@ -87,12 +110,15 @@ end
 function M.show(ft)
     local items = pkg.missing_for_ft(ft)
     if #items == 0 then
-        return
+        return M.show_next() -- nothing to offer for this ft: advance to the next queued one
     end
     local ui = ui_mod.get()
     if not ui then
-        return
+        return M.show_next()
     end
+    -- Mark this ft's prompt as on-screen so a same-ft reopen (offer/show) is suppressed until it
+    -- closes — its callback clears the flag and advances the queue.
+    showing = ft
 
     -- Bucket the missing items into category tabs.
     local buckets = {}
@@ -170,6 +196,9 @@ function M.show(ft)
             if not confirmed then
                 state.snoozed[ft] = vim.uv.now() + config.prompt.snooze_ms
             end
+            -- Released on EVERY close path (a/s/c or q/<Esc>); show the next queued ft from here.
+            showing = nil
+            vim.schedule(M.show_next)
         end,
     })
 end
@@ -222,6 +251,9 @@ function M.run_install(all, chosen)
     if by_kind.parser then
         pkg.install("parser", by_kind.parser, function(err)
             if err then
+                -- Surface the backend's failure (mirrors the mason branch via progress.done) instead
+                -- of swallowing it — a failed parser install would otherwise be silent.
+                vim.notify("Parser install failed: " .. tostring(err), vim.log.levels.ERROR)
                 return
             end
             -- Parsers are installed now; enable treesitter on open buffers (lvim-ts
@@ -238,20 +270,20 @@ function M.run_install(all, chosen)
     end
 
     if by_kind.mason then
-        progress.start(by_kind.mason)
+        local session = progress.start(by_kind.mason)
         -- Suppress lvim-lsp prompts/starts while installing.
         pcall(function()
             pkg.emit("installing", true)
         end)
         pkg.install("mason", by_kind.mason, function(results)
-            progress.done(results)
+            session.done(results)
             -- Re-check deps and (re)attach servers whose tools are now present.
             pcall(function()
                 pkg.emit("installing", false)
             end)
         end, {
             on_progress = function(name, status, action)
-                progress.update(name, status, action)
+                session.update(name, status, action)
             end,
         })
     end

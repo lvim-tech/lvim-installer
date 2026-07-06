@@ -185,13 +185,13 @@ function M.update_registry(which)
         return
     end
 
-    progress.start(phases)
+    local session = progress.start(phases)
     local results, steps = {}, {}
 
     local function run(i)
         local step = steps[i]
         if not step then
-            progress.done(results, "Registries updated (" .. which .. ")")
+            session.done(results, "Registries updated (" .. which .. ")")
             browser.refresh_open()
             return
         end
@@ -203,9 +203,9 @@ function M.update_registry(which)
     -- Re-download a catalogue (Mason / parser) to our local registry file.
     local function catalogue_step(phase, kind)
         steps[#steps + 1] = function(cont)
-            progress.update(phase, "pending", "Downloading\xe2\x80\xa6")
+            session.update(phase, "pending", "Downloading\xe2\x80\xa6")
             pkg.update_registry(kind, function()
-                progress.update(phase, "ok", "Updated")
+                session.update(phase, "ok", "Updated")
                 results[phase] = true
                 browser.refresh_open()
                 cont()
@@ -216,14 +216,14 @@ function M.update_registry(which)
     -- Run an outdated check (plugin / parser), reflecting its done/total as the action.
     local function check_step(phase, fn)
         steps[#steps + 1] = function(cont)
-            progress.update(phase, "pending", "Checking\xe2\x80\xa6")
+            session.update(phase, "pending", "Checking\xe2\x80\xa6")
             fn(function(found)
-                progress.update(phase, "ok", string.format("%d outdated", #found))
+                session.update(phase, "ok", string.format("%d outdated", #found))
                 results[phase] = true
                 browser.refresh_open()
                 cont()
             end, function(done, total)
-                progress.update(phase, "pending", string.format("%d/%d", done, total))
+                session.update(phase, "pending", string.format("%d/%d", done, total))
             end)
         end
     end

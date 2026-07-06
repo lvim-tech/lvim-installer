@@ -16,15 +16,15 @@ function M.check()
     h.start("lvim-installer")
 
     -- ── core ──────────────────────────────────────────────────────────────────
-    if vim.fn.has("nvim-0.10") == 1 then
-        h.ok("Neovim >= 0.10")
+    if vim.fn.has("nvim-0.12") == 1 then
+        h.ok("Neovim >= 0.12")
     else
-        h.error("Neovim >= 0.10 is required")
+        h.error("Neovim >= 0.12 is required (the plugin backend is built on vim.pack)")
     end
     if type(vim.pack) == "table" and type(vim.pack.add) == "function" then
         h.ok("built-in vim.pack available (plugin install / update / remove)")
     else
-        h.warn("vim.pack not available — the Plugins tab needs Neovim's built-in vim.pack")
+        h.error("vim.pack not available — Neovim >= 0.12 is required for the plugin backend")
     end
 
     -- ── hard dependencies ─────────────────────────────────────────────────────

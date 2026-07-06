@@ -36,7 +36,20 @@ local TABS = {
 
 -- Browse state (persists across the close/reopen cycle).
 -- `expanded` holds plugin names whose inline detail is unfolded.
-local state = { filters = {}, filter_modes = {}, active = "plugin", pending = nil, expanded = {}, git_expanded = {} }
+-- `active_ops` is the per-row in-flight guard (rowname → true) shared by every op kind
+-- (plugin / mason / parser) so a repeated key can't start two git processes on one repo.
+-- `updating_all` is set while `M.update_all` owns the plugin tab (guards per-plugin ops and
+-- keeps `refresh_open` from rebuilding the progress rows out from under it).
+local state = {
+    filters = {},
+    filter_modes = {},
+    active = "plugin",
+    pending = nil,
+    expanded = {},
+    git_expanded = {},
+    active_ops = {},
+    updating_all = false,
+}
 
 --- Per-tab search text and filter mode — a search or mode set on one tab must NOT leak to
 --- another (the tabs share one window but distinct catalogues). Keyed by tab id.
@@ -302,6 +315,25 @@ local function reinstall_menu(name, info)
     end
     vim.notify("Fetching refs for " .. name .. "…")
     pkg.plugin_fetch(name, function()
+        -- Read the full tag list ONCE (each pkg.plugin_tags is a synchronous `git tag`) and
+        -- resolve version prefixes against it in Lua below — the tag menu would otherwise spawn
+        -- ~6-7 `git tag` per open (the resolve loop + the final checkout re-query).
+        local all_tags = pkg.plugin_tags(name)
+        ---@param prefix string  a version prefix ("1", "1.2", …); leading "v" ignored on both sides
+        ---@return string|nil  newest tag matching the prefix (list is already newest-first)
+        local function resolve_tag(prefix)
+            local function norm(t)
+                return (tostring(t):gsub("^v", ""))
+            end
+            local np = norm(prefix)
+            for _, t in ipairs(all_tags) do
+                local nt = norm(t)
+                if nt == np or nt:sub(1, #np + 1) == (np .. ".") then
+                    return t
+                end
+            end
+            return nil
+        end
         local pin = pkg.get_pin_full("plugin", name)
         local git = pkg.plugin_current(name)
         local rt = (pin and pin.reftype) or (git and git.kind)
@@ -414,7 +446,7 @@ local function reinstall_menu(name, info)
         end
 
         function tag_flow()
-            local tags = pkg.plugin_tags(name)
+            local tags = all_tags
             local tsel = nil
             for _, t in ipairs(tags) do
                 if cur_tag == t then
@@ -442,7 +474,7 @@ local function reinstall_menu(name, info)
                     local labels, ress, prefixes, isc, lw, rw = {}, {}, {}, {}, 0, 0
                     for lvl = 1, #parts do
                         local prefix = table.concat(vim.list_slice(parts, 1, lvl), ".")
-                        local resolved = pkg.plugin_resolve_tag(name, prefix)
+                        local resolved = resolve_tag(prefix)
                         local is_cur = (cur_conv and prefix == cur_conv)
                             or (not cur_conv and lvl == #parts and cur_tag == picked)
                         local label = (lvl < #parts) and ("Newest " .. prefix .. ".x") or ("Exact " .. picked)
@@ -474,7 +506,7 @@ local function reinstall_menu(name, info)
                             if not (c2 and prefixes[j]) then
                                 return
                             end
-                            local resolved = pkg.plugin_resolve_tag(name, prefixes[j]) or picked
+                            local resolved = resolve_tag(prefixes[j]) or picked
                             local lock = (j < #prefixes) and prefixes[j] or nil
                             finish(resolved, { reftype = "tag", version = resolved, branch = lock })
                         end,
@@ -502,7 +534,7 @@ local function reinstall_menu(name, info)
             })
         end
 
-        if #pkg.plugin_tags(name) > 0 then
+        if #all_tags > 0 then
             approach_menu()
         else
             branch_flow()
@@ -516,7 +548,14 @@ end
 ---@param name string
 ---@param info table
 local function update_action(name, info)
+    if state.updating_all then
+        vim.notify("lvim-installer: an Update all is in progress", vim.log.levels.WARN)
+        return
+    end
     local _, finish = row_spinner("p_" .. name, "Updating…")
+    if not finish then
+        return -- an op is already running on this plugin's row
+    end
     pkg.plugin_fetch(name, function()
         local pin = pkg.get_pin_full("plugin", name)
         local rt = pin and pin.reftype
@@ -589,13 +628,11 @@ local function mason_pin_menu(name)
         return
     end
     -- The registry pins one version — use it for the "Latest (…)" label and as the
-    -- fallback when the source query fails.
+    -- fallback when the source query fails. `registry.get` is an O(1) indexed lookup.
     local registry_latest
-    for _, sp in ipairs(registry.all()) do
-        if sp.name == name and sp.source then
-            registry_latest = (purl.parse(sp.source.id) or {}).version
-            break
-        end
+    local reg_spec = registry.get(name)
+    if reg_spec and reg_spec.source then
+        registry_latest = (purl.parse(reg_spec.source.id) or {}).version
     end
 
     -- Ask the source (npm / pypi / github / cargo / golang) for the full version list,
@@ -697,7 +734,11 @@ local function plugin_from_row(rowname)
     if not rowname then
         return nil
     end
-    return rowname:match("^p_(.+)$")
+    -- Wrapped continuation rows (`pd_<name>_<i>_w<j>`) MUST be matched before the plain
+    -- `^pd_(.+)_%d+$` form, which would otherwise fail (its `_w<j>` tail isn't `_%d+$`) →
+    -- a silent no-op when a key is pressed on a wrapped detail line.
+    return rowname:match("^pd_(.+)_%d+_w%d+$")
+        or rowname:match("^p_(.+)$")
         or rowname:match("^pd_(.+)_%d+$")
         or rowname:match("^pg_(.+)_%d+$")
         or rowname:match("^pa_(.+)$")
@@ -813,12 +854,12 @@ local function plugin_item_row(tab, item, w)
     for i, fv in ipairs(fields) do
         local field = fv[1]
         local run, suffix
-        if field == "Source" and info.src and info.src ~= "-" and vim.ui.open then
+        if field == "Source" and info.src and info.src ~= "-" then
             suffix = "󰏌"
             run = function()
                 pcall(vim.ui.open, info.src)
             end
-        elseif field == "Path" and info.path and vim.ui.open then
+        elseif field == "Path" and info.path then
             suffix = "󰝰"
             run = function()
                 pcall(vim.ui.open, info.path)
@@ -909,7 +950,7 @@ local function plugin_item_row(tab, item, w)
             end,
         },
     }
-    if info.src and info.src ~= "-" and vim.ui.open then
+    if info.src and info.src ~= "-" then
         specs[#specs + 1] = {
             label = "Browse",
             key = "B",
@@ -1178,16 +1219,20 @@ local function mason_from_row(rowname)
     if not rowname then
         return nil
     end
-    return rowname:match("^mi_(.+)$") or rowname:match("^md_(.+)_%d+$") or rowname:match("^ma_(.+)$")
+    -- Wrapped detail rows (`md_<name>_<i>_w<j>`) matched first — see plugin_from_row.
+    return rowname:match("^md_(.+)_%d+_w%d+$")
+        or rowname:match("^mi_(.+)$")
+        or rowname:match("^md_(.+)_%d+$")
+        or rowname:match("^ma_(.+)$")
 end
 
---- Homepage URL for a registry package (for Browse).
+--- Homepage URL for a registry package (for Browse). `registry.get` is an O(1) indexed
+--- lookup (unlike a linear `registry.all()` scan).
+---@param name string
+---@return string|nil
 local function mason_homepage(name)
-    for _, sp in ipairs(registry.all()) do
-        if sp.name == name then
-            return sp.homepage
-        end
-    end
+    local sp = registry.get(name)
+    return sp and sp.homepage
 end
 
 --- Run an action on a Mason package by name.
@@ -1244,7 +1289,7 @@ local function mason_item_row(tab, item, w)
     for i, fv in ipairs(fields) do
         local field = fv[1]
         local run, suffix
-        if field == "Homepage" and vim.ui.open then
+        if field == "Homepage" then
             suffix = "󰏌" -- 󰏌
             run = function()
                 pcall(vim.ui.open, fv[2])
@@ -1321,7 +1366,7 @@ local function mason_item_row(tab, item, w)
             },
         }
     end
-    if mason_homepage(item.name) and vim.ui.open then
+    if item.spec and item.spec.homepage then
         specs[#specs + 1] = {
             label = "Browse",
             key = "B",
@@ -1447,7 +1492,11 @@ local function parser_from_row(rowname)
     if not rowname then
         return nil
     end
-    return rowname:match("^ti_(.+)$") or rowname:match("^td_(.+)_%d+$") or rowname:match("^ta_(.+)$")
+    -- Wrapped detail rows (`td_<name>_<i>_w<j>`) matched first — see plugin_from_row.
+    return rowname:match("^td_(.+)_%d+_w%d+$")
+        or rowname:match("^ti_(.+)$")
+        or rowname:match("^td_(.+)_%d+$")
+        or rowname:match("^ta_(.+)$")
 end
 
 --- Run an action on a Treesitter parser by name.
@@ -1890,14 +1939,21 @@ end
 --- updates the trailing status text; finish(msg, level) stops the spinner, re-renders the panel
 --- and (when msg is given) shows the result notification. Works even when the row is not found
 --- (no spinner, but finish still refreshes + notifies).
+--- Returns nil (no setters) when an op is ALREADY in flight on `rowname` — the shared
+--- in-flight guard: the caller bails so a repeated key can't start two git processes on
+--- one repo (the second usually dies on index.lock).
 ---@param rowname string
 ---@param verb string
----@return fun(s: string), fun(msg?: string, level?: integer)
+---@return (fun(s: string))? set_status, (fun(msg?: string, level?: integer))? finish
 row_spinner = function(rowname, verb)
+    if state.active_ops[rowname] then
+        return nil, nil
+    end
     local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
     local fi, status_txt = 1, verb
     local timer = vim.uv.new_timer()
     local done = false
+    state.active_ops[rowname] = true
     local function stop_spinner()
         if timer then
             timer:stop()
@@ -1910,6 +1966,7 @@ row_spinner = function(rowname, verb)
             return
         end
         done = true
+        state.active_ops[rowname] = nil
         stop_spinner()
         M.refresh_open()
         if msg then
@@ -1924,17 +1981,24 @@ row_spinner = function(rowname, verb)
             0,
             90,
             vim.schedule_wrap(function()
+                -- Re-resolve the row by name every tick: a concurrent refresh_open replaces the row
+                -- tables wholesale, so a captured reference would go stale (spinner mutating an orphan
+                -- while the visible row snaps back to idle). Re-apply the progress tint on the fresh row.
                 row = find_row(rowname)
                 if not row then
                     stop_spinner()
                     return
                 end
+                row.icon_hl = "LvimInstallerProgress"
+                row.text_hl = "LvimInstallerProgress"
                 row.label = frames[fi] .. "  " .. status_txt
                 fi = fi % #frames + 1
                 if state.handle and state.handle.valid() then
                     state.handle.render()
                     pcall(vim.cmd, "redraw")
                 else
+                    -- Panel closed mid-op: only the timer stops here. `finish` keeps its once-guard and
+                    -- still delivers the result notification later (refresh_open no-ops safely when closed).
                     stop_spinner()
                 end
             end)
@@ -1985,7 +2049,10 @@ function M.refresh_open(opts)
         cur = state.handle.cursor_name and state.handle.cursor_name()
     end
     for i, tab in ipairs(TABS) do
-        if state.tabs[i] then
+        -- While Update all owns the plugin tab, its progress rows must NOT be rebuilt from the
+        -- catalogue under it (that would swap the animated rows out and fight update_all's own
+        -- draw() — flicker + a stale-geometry recalc). Every other tab still refreshes.
+        if state.tabs[i] and not (state.updating_all and tab.id == "plugin") then
             state.tabs[i].rows = rows_for(tab)
         end
     end
@@ -2006,6 +2073,9 @@ function M.mason_op(name, is_update)
     -- No per-step status: a plain spinner keeps mason consistent with the plugin / parser ops
     -- (which are single git/network calls with nothing granular to report).
     local _, finish = row_spinner("mi_" .. name, is_update and "Updating…" or "Installing…")
+    if not finish then
+        return -- an op is already running on this package's row
+    end
     pkg.install("mason", { name }, function()
         local after = pkg.installed_version(name)
         local msg
@@ -2027,6 +2097,9 @@ end
 ---@return nil
 function M.parser_op(name)
     local _, finish = row_spinner("ti_" .. name, "Installing…")
+    if not finish then
+        return -- an op is already running on this parser's row
+    end
     pkg.install("parser", { name }, function()
         finish(name .. ": parser installed")
     end)
@@ -2058,12 +2131,12 @@ function M.update_all()
             M.refresh_open()
             return
         end
+        state.updating_all = true
         local ti = plugin_tab_index()
         local total = #targets
         local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
         local fi, k, done, first = 1, 0, false, true
         local pos = 0
-        local batch_left = 0
         local timer = vim.uv.new_timer()
         local status = {} -- name → "queued" | "updating" | "done"
         for _, n in ipairs(targets) do
@@ -2123,6 +2196,7 @@ function M.update_all()
                 return
             end
             done = true
+            state.updating_all = false
             if timer then
                 timer:stop()
                 timer:close()
@@ -2132,14 +2206,12 @@ function M.update_all()
             M.refresh_open()
         end
 
-        local function one_done(name)
+        -- Flip one item's row to "done" (idempotent). PackChanged uses this for LIVE per-item
+        -- feedback only; the batch callback in `pump` is what authoritatively advances the queue.
+        local function mark_done(name)
             if status[name] == "updating" then
                 status[name] = "done"
                 k = k + 1
-                batch_left = batch_left - 1
-                if batch_left <= 0 then
-                    pump()
-                end
             end
         end
 
@@ -2160,19 +2232,26 @@ function M.update_all()
             if #batch == 0 then
                 return
             end
-            batch_left = #batch
-            local this_pos = pos
             pkg.update("plugin", batch, function(err)
-                if err then
-                    vim.notify("Update all failed: " .. tostring(err), vim.log.levels.ERROR)
-                    finish()
-                    return
-                end
-                if not done and pos == this_pos and batch_left > 0 then
-                    for _, n in ipairs(batch) do
-                        one_done(n)
+                -- vim.pack.update is BLOCKING and pumps the loop, so its PackChanged events AND this
+                -- callback fire on the pack stack. Schedule the advance OFF that stack so the next
+                -- batch's vim.pack.update can never re-enter the current one. This callback is the
+                -- authoritative batch-completion signal (fires even when a batch emits no PackChanged,
+                -- e.g. nothing to update, or errors) — no timeout fallback needed.
+                vim.schedule(function()
+                    if done then
+                        return
                     end
-                end
+                    if err then
+                        vim.notify("Update all failed: " .. tostring(err), vim.log.levels.ERROR)
+                        finish()
+                        return
+                    end
+                    for _, n in ipairs(batch) do
+                        mark_done(n) -- any item whose PackChanged never arrived is completed here
+                    end
+                    pump()
+                end)
             end)
         end
 
@@ -2182,7 +2261,7 @@ function M.update_all()
             callback = function(ev)
                 local d = ev.data
                 if d and d.spec and (d.kind == "update" or d.kind == "install") then
-                    one_done(d.spec.name)
+                    mark_done(d.spec.name)
                 end
             end,
         })

@@ -214,15 +214,26 @@ local function run_notify(specs, missing, nm, opts)
         )
     end
 
-    pcall(vim.pack.add, specs, { load = false, confirm = false })
+    local add_ok, add_err = pcall(vim.pack.add, specs, { load = false, confirm = false })
 
     if timer then
         timer:stop()
         timer:close()
         timer = nil
     end
-    done_count = total
+    -- Any plugin whose clone never landed (no PackChanged → still pending) is an error, NOT done:
+    -- leaving done_count = total would render "✓ Installed N plugins" over repos that never cloned
+    -- and then run build hooks against missing dirs. done_count already counts only the real installs.
+    for _, n in ipairs(missing) do
+        if pending[n] then
+            status[n] = "error"
+            pending[n] = nil
+        end
+    end
     render()
+    if not add_ok then
+        nm.notify("lvim-installer: install failed — " .. tostring(add_err), vim.log.levels.ERROR)
+    end
 
     -- Build phase: synchronously run each freshly-installed plugin's build hook (the
     -- authors' convention — e.g. blink.cmp's :pwait()) while the panel shows per-library
@@ -230,7 +241,9 @@ local function run_notify(specs, missing, nm, opts)
     -- pumps the event loop (pwait); render + redraw also bracket each build.
     local build_names = {}
     for _, n in ipairs(missing) do
-        if has_build[n] then
+        -- Only build plugins that actually cloned (status == "done"): a build hook against a repo
+        -- that never landed would fail on a missing dir.
+        if has_build[n] and status[n] == "done" then
             build_names[#build_names + 1] = n
         end
     end
@@ -255,17 +268,26 @@ local function run_notify(specs, missing, nm, opts)
                 end)
             )
         end
-        for _, n in ipairs(build_names) do
-            b.status[n] = "building"
-            brender()
-            local pok, rok = pcall(opts.build_runner, n)
-            b.status[n] = (pok and rok ~= false) and "done" or "error"
-            b.done = b.done + 1
-            brender()
-        end
+        -- Run the build loop under pcall so that an error out of brender (nm.progress_update) can NOT
+        -- skip the btimer teardown below — otherwise a uv timer would keep firing every 80ms forever,
+        -- re-raising inside schedule_wrap. Teardown must be unconditional.
+        local loop_ok, loop_err = pcall(function()
+            for _, n in ipairs(build_names) do
+                b.status[n] = "building"
+                brender()
+                local pok, rok = pcall(opts.build_runner, n)
+                b.status[n] = (pok and rok ~= false) and "done" or "error"
+                b.done = b.done + 1
+                brender()
+            end
+        end)
         if btimer then
             btimer:stop()
             btimer:close()
+            btimer = nil
+        end
+        if not loop_ok then
+            nm.notify("lvim-installer: build phase error — " .. tostring(loop_err), vim.log.levels.ERROR)
         end
     end
 
@@ -335,10 +357,12 @@ function M.install(specs, opts)
     end
     local nm = notify_mod()
     if not nm then
-        -- First-ever install: the UI itself is not cloned yet. Bootstrap the render set
-        -- (lvim-utils + colorscheme + their deps) FIRST, silently, then render the rest
-        -- through lvim-hud.notify — lazy.nvim's "clone the manager first" model.
-        local ui_specs = closure_specs(specs, { "lvim-utils", "lvim-colorscheme" })
+        -- First-ever install: the UI itself is not cloned yet. Bootstrap the render set FIRST,
+        -- silently, then render the rest through lvim-hud.notify — the "clone the manager first"
+        -- model. lvim-hud is an explicit root: `notify_mod()` needs lvim-hud.notify, and the
+        -- published lvim-utils spec doesn't necessarily pull it in transitively (without it the
+        -- whole first install falls back to the silent path).
+        local ui_specs = closure_specs(specs, { "lvim-utils", "lvim-hud", "lvim-colorscheme" })
         if #ui_specs > 0 then
             pcall(vim.pack.add, ui_specs, { load = true, confirm = false })
         end

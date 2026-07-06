@@ -8,6 +8,7 @@
 ---@module "lvim-installer.highlights"
 
 local colors = require("lvim-utils.colors")
+local hl = require("lvim-utils.highlight")
 local M = {}
 
 --- Build the group → opts map from the CURRENT palette. A function (not a static
@@ -72,25 +73,15 @@ M.build = build
 --- on ColorScheme and rebuilt whenever the lvim-utils palette changes.
 ---@return nil
 function M.setup()
-    local ok, hl = pcall(require, "lvim-utils.highlight")
-    if not ok then
-        -- lvim-utils unavailable: plain one-shot apply so the UI is still coloured.
-        for group, opts in pairs(build()) do
-            pcall(vim.api.nvim_set_hl, 0, group, vim.tbl_extend("force", { default = true }, opts))
-        end
-        return
-    end
-    -- force = true: nothing else defines LvimInstaller* groups, so forcing keeps
-    -- them correct across palette swaps (a stale registry entry can't shadow the
-    -- freshly-built colours, which the define_if_missing path would).
+    -- lvim-utils is a declared HARD dependency (required at the top of this file), so there is no
+    -- fallback path — the highlight API is always present here.
+    -- force = true: nothing else defines LvimInstaller* groups, so forcing keeps them correct across
+    -- palette swaps (a stale registry entry can't shadow the freshly-built colours).
     hl.register(build(), true)
     hl.setup()
-    local colors_ok, colors = pcall(require, "lvim-utils.colors")
-    if colors_ok then
-        colors.on_change(function()
-            hl.register(build(), true)
-        end)
-    end
+    colors.on_change(function()
+        hl.register(build(), true)
+    end)
 end
 
 return M
