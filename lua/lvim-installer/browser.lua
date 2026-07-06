@@ -975,12 +975,16 @@ local function filter_bar(tab_id, modes, items, match)
         on_select = function(_, id)
             state.filter_modes[tab_id] = id
             if id == "Search" then
-                vim.ui.input({ prompt = "Search: ", default = tab_filter(tab_id) }, function(input)
-                    if input ~= nil then
-                        state.filters[tab_id] = input
-                    end
-                    M.refresh_open()
-                end)
+                require("lvim-ui").input({
+                    prompt = "Search",
+                    default = tab_filter(tab_id),
+                    callback = function(confirmed, input)
+                        if confirmed == true then
+                            state.filters[tab_id] = input
+                        end
+                        M.refresh_open()
+                    end,
+                })
                 return
             end
             M.refresh_open()
@@ -1891,25 +1895,28 @@ end
 ---@return fun(s: string), fun(msg?: string, level?: integer)
 row_spinner = function(rowname, verb)
     local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
-    local row = find_row(rowname)
     local fi, status_txt = 1, verb
     local timer = vim.uv.new_timer()
     local done = false
-    local function finish(msg, level)
-        if done then
-            return
-        end
-        done = true
+    local function stop_spinner()
         if timer then
             timer:stop()
             timer:close()
             timer = nil
         end
+    end
+    local function finish(msg, level)
+        if done then
+            return
+        end
+        done = true
+        stop_spinner()
         M.refresh_open()
         if msg then
             vim.notify(msg, level)
         end
     end
+    local row = find_row(rowname)
     if row and timer then
         row.icon_hl = "LvimInstallerProgress"
         row.text_hl = "LvimInstallerProgress"
@@ -1917,13 +1924,18 @@ row_spinner = function(rowname, verb)
             0,
             90,
             vim.schedule_wrap(function()
+                row = find_row(rowname)
+                if not row then
+                    stop_spinner()
+                    return
+                end
                 row.label = frames[fi] .. "  " .. status_txt
                 fi = fi % #frames + 1
                 if state.handle and state.handle.valid() then
                     state.handle.render()
                     pcall(vim.cmd, "redraw")
                 else
-                    finish()
+                    stop_spinner()
                 end
             end)
         )
@@ -2150,15 +2162,18 @@ function M.update_all()
             end
             batch_left = #batch
             local this_pos = pos
-            pkg.update("plugin", batch, function() end)
-            -- Safety: if a plugin emits no PackChanged, time the batch out.
-            vim.defer_fn(function()
+            pkg.update("plugin", batch, function(err)
+                if err then
+                    vim.notify("Update all failed: " .. tostring(err), vim.log.levels.ERROR)
+                    finish()
+                    return
+                end
                 if not done and pos == this_pos and batch_left > 0 then
                     for _, n in ipairs(batch) do
                         one_done(n)
                     end
                 end
-            end, 30000)
+            end)
         end
 
         local grp = vim.api.nvim_create_augroup("lvim_installer_update_all", { clear = true })

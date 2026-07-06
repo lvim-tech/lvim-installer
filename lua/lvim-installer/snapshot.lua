@@ -74,11 +74,14 @@ function M.save(name)
     if name and name ~= "" then
         do_save(name)
     else
-        vim.ui.input({ prompt = "Save current state as snapshot: " }, function(input)
-            if input then
-                do_save(input)
-            end
-        end)
+        require("lvim-ui").input({
+            prompt = "Save current state as snapshot",
+            callback = function(confirmed, input)
+                if confirmed == true and input then
+                    do_save(input)
+                end
+            end,
+        })
     end
 end
 
