@@ -1900,7 +1900,8 @@ local function render_browser(layout, slot, backdrop)
     -- live rows and re-render without closing the window. Each open layout has its own array.
     p.tabs = tabs
     p.handle = ui.tabs({
-        title = "Package Manager",
+        title = config.title, -- the panel's border-title text (config, default "Package Manager")
+        title_pos = config.title_pos, -- alignment — ONE config value for every layout ("center" default)
         -- The title counter (visible / total for the active tab) — the chassis renders it on the top
         -- border (right-aligned, opposite the title); populated by the row builders into state.tab_counts.
         title_count = function()

@@ -101,6 +101,8 @@ Lua: >lua
 `setup(opts)` deep-merges into the live defaults (|LvimInstallerConfig|): >lua
   require("lvim-installer").setup({
       prompt = { title_icon = "󰏗 ", snooze_ms = 5 * 60 * 1000, width = 0.9 },
+      title = "Package Manager",  -- the panel's border-title text
+      title_pos = "center",       -- title alignment — the same in every layout
       browser = { layout = "float" },
       dock = {
           dock_stack = true,   -- managed dock-stack consumer (false = standalone)
@@ -116,6 +118,9 @@ Lua: >lua
   })
 <
   prompt              first-open prompt: title_icon, snooze_ms, width
+  title               the Package Manager panel's border-title text
+  title_pos           border-title alignment: "left" | "center" (default) |
+                      "right" — layout-independent (float/area/bottom the same)
   browser             how the manager opens: layout (float|area|bottom);
                       slot size comes from the central lvim-utils dock geometry
   dock.dock_stack     true = managed dock-STACK consumer (cyclable

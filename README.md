@@ -153,6 +153,11 @@ require("lvim-installer").setup({
         width = 0.9, -- fraction of the screen wide for both prompt popups
     },
 
+    -- The Package Manager panel's border-title: its text and alignment ("left" | "center" | "right").
+    -- Layout-independent — float / area / bottom all render it the same (centered by default).
+    title = "Package Manager",
+    title_pos = "center",
+
     -- The package-manager browser: how it opens. Its slot size (float width/height, area / bottom height)
     -- comes from the central lvim-utils dock geometry, edited from control-center's "Utils" panel.
     browser = {

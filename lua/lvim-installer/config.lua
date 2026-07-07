@@ -5,6 +5,8 @@
 ---@module "lvim-installer.config"
 
 ---@class LvimInstallerConfig
+---@field title        string  The Package Manager panel's border-title text
+---@field title_pos    "left"|"center"|"right"  Border-title alignment — every layout the same (default "center")
 ---@field popup_global table   Passed verbatim to lvim-ui.new()
 ---@field prompt       table   Unified prompt appearance (title_icon, snooze_ms, width)
 ---@field progress     table   Progress channel appearance (name, icon, spinner, header_hl)
@@ -24,6 +26,11 @@
 return {
     -- Mason tools (LSP / DAP / linter / formatter) to install silently at setup.
     ensure_installed = {},
+    -- The Package Manager panel's border-title: its TEXT and alignment ("left" | "center" | "right").
+    -- Layout-independent — float / area / bottom all render it the same (centered by default, like the
+    -- other lvim-tech panels). The child confirm dialogs and the install prompt keep their own titles.
+    title = "Package Manager",
+    title_pos = "center",
     -- The Package Manager browser (the tabbed panel) — HOW it opens:
     --   "float"  — a centred modal window. DEFAULT.
     --   "area"   — the cmdline / minibuffer dock shared by the fzf pickers + LvimLsp nav (grows cmdheight,
