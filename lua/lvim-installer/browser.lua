@@ -40,6 +40,44 @@ local TABS = {
 -- (plugin / mason / parser) so a repeated key can't start two git processes on one repo.
 -- `updating_all` is set while `M.update_all` owns the plugin tab (guards per-plugin ops and
 -- keeps `refresh_open` from rebuilding the progress rows out from under it).
+-- ── the help window (the canonical cheatsheet) ───────────────────────────────
+
+--- The browser's LIVE key table (`config.browser.keys`) — one accessor, so nothing reads a literal.
+---@return table<string, string>
+local function browser_keys()
+    return (config.browser and config.browser.keys) or {}
+end
+
+-- Key id → description, in display order. An unset key drops its row.
+---@type { [1]: string, [2]: string }[]
+local HELP = {
+    { "install", "install the focused package / parser" },
+    { "update", "update the focused plugin / package / parser" },
+    { "reinstall", "reinstall the focused plugin / package" },
+    { "delete", "delete the focused plugin / package / parser" },
+    { "browse", "open the homepage / source" },
+    { "help", "this help" },
+}
+
+--- The browser's keymap cheatsheet — the shared `lvim-ui.help` component owns the rows, the striping, the
+--- colours and the window; this only supplies the plugin's LIVE keys. Each row-action key is also bound in
+--- its UPPERCASE twin (so the shortcut never depends on Shift) — the sheet shows the lowercase form.
+local function show_help()
+    local k = browser_keys()
+    local items = {}
+    for _, e in ipairs(HELP) do
+        local lhs = k[e[1]]
+        if lhs and lhs ~= "" then
+            items[#items + 1] = { lhs, e[2] }
+        end
+    end
+    require("lvim-ui").help({
+        title = (config.title or "Package Manager") .. " keymaps",
+        items = items,
+        close_keys = { "q", "<Esc>", k.help or "g?" },
+    })
+end
+
 local state = {
     filters = {},
     filter_modes = {},
@@ -1916,8 +1954,17 @@ local function render_browser(layout, slot, backdrop)
         -- Tabs are managed only from the header (press "t"); content keys never jump
         -- to or switch tabs.
         lock_tabs = true,
-        -- The bottom key-hint LEGEND (panel keys • focused-row keys), same as the control center.
+        -- The bottom key-hint LEGEND (panel keys • focused-row keys), same as the control center — plus the
+        -- `help` chip, so the cheatsheet's own key is on screen (the row keys are not discoverable from the
+        -- list). `footer_hints_extra` items are appended to the live legend by the chassis.
         footer_hints = true,
+        footer_hints_extra = {
+            { key = browser_keys().help, label = "help", no_hotkey = true, run = show_help },
+        },
+        -- The cheatsheet is a FRAME-WIDE keymap, not an `on_open` buffer map: only keys the chassis binds
+        -- itself land in its `used` set, which is what makes it OWN the `g` chord prefix (a `g?` typed at
+        -- human speed must not fall through to the builtin `g` once `timeoutlen` expires).
+        keymaps = { { key = browser_keys().help, run = show_help } },
         -- The browser's OUTER slot (float width/height, area / bottom height) comes from the SINGLE geometry
         -- authority `lvim-utils.config.dock.geometry`, resolved via `lvim-utils.dock.slot(layout)`. In stack mode
         -- this `slot` is the manager-supplied `ctx.rect`; standalone it is `dock.slot(layout, force[layout])`
@@ -1966,17 +2013,26 @@ local function render_browser(layout, slot, backdrop)
                     end
                 end
             end
-            -- Map both cases so the shortcut never depends on Shift.
-            local function setkey(keys, fn, desc)
-                for _, key in ipairs(keys) do
+            -- Map both cases so the shortcut never depends on Shift (a single-letter key gets its uppercase
+            -- twin; a chord — should the user rebind to one — is bound as given).
+            local function setkey(lhs, fn, desc)
+                if not lhs or lhs == "" then
+                    return
+                end
+                local variants = { lhs }
+                if #lhs == 1 then
+                    variants[#variants + 1] = lhs:upper()
+                end
+                for _, key in ipairs(variants) do
                     vim.keymap.set("n", key, fn, { buffer = buf, nowait = true, desc = desc })
                 end
             end
-            setkey({ "r", "R" }, dispatch("reinstall", "reinstall", nil), "Reinstall")
-            setkey({ "i", "I" }, dispatch(nil, "install", "install"), "Install package")
-            setkey({ "u", "U" }, dispatch("update", "update", "update"), "Update")
-            setkey({ "d", "D" }, dispatch("delete", "delete", "delete"), "Delete")
-            setkey({ "b", "B" }, dispatch("browse", "browse", nil), "Browse homepage / source")
+            local bk = browser_keys()
+            setkey(bk.reinstall, dispatch("reinstall", "reinstall", nil), "Reinstall")
+            setkey(bk.install, dispatch(nil, "install", "install"), "Install package")
+            setkey(bk.update, dispatch("update", "update", "update"), "Update")
+            setkey(bk.delete, dispatch("delete", "delete", "delete"), "Delete")
+            setkey(bk.browse, dispatch("browse", "browse", nil), "Browse homepage / source")
         end,
         callback = function()
             p.handle = nil

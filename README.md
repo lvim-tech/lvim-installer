@@ -43,6 +43,10 @@ version** (or a git branch / tag / commit for plugins). Failures are surfaced
 through the notification history with the real error (e.g. the `go install`
 stderr), so installs are debuggable.
 
+The row keys are `i` install, `u` update, `r` reinstall, `d` delete, `b` browse (each also in its
+uppercase twin). **`g?`** — or the **`help` chip** on the footer legend — opens the keymap CHEATSHEET,
+built from the live `browser.keys` config, so a rebind shows up in it.
+
 ## Installation
 
 lvim-installer is the package-manager **UI**. Together with its two required
@@ -162,6 +166,16 @@ require("lvim-installer").setup({
     -- comes from the central lvim-utils dock geometry, edited from control-center's "Utils" panel.
     browser = {
         layout = "float", -- "float" (centred modal) | "area" (cmdline/minibuffer dock) | "bottom" (bottom dock)
+        -- The browser's row-action keys (each also bound in its UPPERCASE twin, so the shortcut never
+        -- depends on Shift) and the cheatsheet chord. The `g?` help window is built from THIS table.
+        keys = {
+            help = "g?", -- the keymap CHEATSHEET (also a `help` chip on the footer legend)
+            reinstall = "r",
+            install = "i",
+            update = "u",
+            delete = "d",
+            browse = "b",
+        },
     },
 
     -- Dock integration, namespaced under `dock` (matching lvim-dependencies' config.dock.*).

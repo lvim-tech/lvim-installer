@@ -103,7 +103,14 @@ Lua: >lua
       prompt = { title_icon = "󰏗 ", snooze_ms = 5 * 60 * 1000, width = 0.9 },
       title = "Package Manager",  -- the panel's border-title text
       title_pos = "center",       -- title alignment — the same in every layout
-      browser = { layout = "float" },
+      browser = {
+          layout = "float",
+          keys = {           -- the row actions + the `g?` cheatsheet (built
+              help = "g?",   -- from THIS table; also a `help` footer chip)
+              reinstall = "r", install = "i", update = "u",
+              delete = "d", browse = "b",
+          },
+      },
       dock = {
           dock_stack = true,   -- managed dock-stack consumer (false = standalone)
           force = { float = {}, area = {}, bottom = {} },  -- per-layout geometry override
@@ -121,7 +128,8 @@ Lua: >lua
   title               the Package Manager panel's border-title text
   title_pos           border-title alignment: "left" | "center" (default) |
                       "right" — layout-independent (float/area/bottom the same)
-  browser             how the manager opens: layout (float|area|bottom);
+  browser             how the manager opens: layout (float|area|bottom) and
+                      `keys` (row actions i/u/r/d/b + the `g?` cheatsheet);
                       slot size comes from the central lvim-utils dock geometry
   dock.dock_stack     true = managed dock-STACK consumer (cyclable
                       <Leader>n/p/x/m, :LvimDock, one-visible-per-layout;

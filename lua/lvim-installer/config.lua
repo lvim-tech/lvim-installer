@@ -12,7 +12,7 @@
 ---@field progress     table   Progress channel appearance (name, icon, spinner, header_hl)
 ---@field update_concurrency integer  Plugins updated at once during "Update all"
 ---@field ensure_installed string[]  Mason tools to install silently at setup (allowlist)
----@field browser     table   The Package Manager panel: `layout` = "area"|"float"|"bottom"
+---@field browser     table   The Package Manager panel: `layout` = "area"|"float"|"bottom", `keys` = its row-action keys + the `g?` cheatsheet
 ---@field dock        LvimInstallerDockConfig  Dock integration (namespaced like lvim-dependencies' `config.dock`)
 ---@field tab_icons   table<string,string>  Browser tab-bar icons keyed by tab id (Nerd Font glyphs)
 ---@field action_icons table<string,string>  Inline action-row icons keyed by action label (Nerd Font glyphs)
@@ -41,6 +41,17 @@ return {
     -- edited live from control-center's "Utils" panel; the browser resolves its slot via `lvim-utils.dock.slot`.
     browser = {
         layout = "float",
+        -- The browser's own row-action keys (each is bound in BOTH cases, so the shortcut never depends on
+        -- Shift) and the cheatsheet chord. The `g?` help window is built from THIS table, so a rebind shows
+        -- up in it, and the footer legend carries a `help` chip.
+        keys = {
+            help = "g?", -- the set-wide cheatsheet chord (the panel owns the `g` prefix — see lvim-ui)
+            reinstall = "r",
+            install = "i",
+            update = "u",
+            delete = "d",
+            browse = "b",
+        },
     },
     -- Dock integration, namespaced under `dock` (matching lvim-dependencies' `config.dock.*`).
     dock = {
