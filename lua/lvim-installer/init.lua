@@ -192,6 +192,7 @@ function M.update_registry(which)
         local step = steps[i]
         if not step then
             session.done(results, "Registries updated (" .. which .. ")")
+            browser.invalidate_tags() -- re-read git tags on the next build; the registry just changed
             browser.refresh_open()
             return
         end

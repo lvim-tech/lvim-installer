@@ -754,8 +754,18 @@ local function mason_pin_menu(name)
                 vim.notify("No versions available for " .. name)
                 return
             end
+            local pinned_before_slice = pkg.get_pin("mason", name)
             if #versions > 40 then
                 versions = vim.list_slice(versions, 1, 40) -- keep the dropdown navigable
+                -- ...but never slice out the CURRENT pin, or it can't be re-selected from the menu
+                -- (focus would fall to the top and re-pinning it becomes impossible).
+                if
+                    pinned_before_slice
+                    and pinned_before_slice ~= ""
+                    and not vim.tbl_contains(versions, pinned_before_slice)
+                then
+                    versions[#versions + 1] = pinned_before_slice
+                end
             end
             local latest = registry_latest or versions[1]
 
@@ -902,6 +912,22 @@ local function wrap_value(text, width)
     if width < 8 then
         width = 8
     end
+    -- Measure in DISPLAY columns, not bytes: a multibyte value (a description with typographic
+    -- quotes, a non-ASCII path) would otherwise wrap late and overflow the column.
+    local dw = vim.fn.strdisplaywidth
+    --- Longest prefix of `s` fitting in `w` display columns (character-safe), and the remainder.
+    ---@param s string
+    ---@param w integer
+    ---@return string head, string rest
+    local function take_cols(s, w)
+        for n = vim.fn.strchars(s), 1, -1 do
+            local head = vim.fn.strcharpart(s, 0, n)
+            if dw(head) <= w then
+                return head, vim.fn.strcharpart(s, n)
+            end
+        end
+        return vim.fn.strcharpart(s, 0, 1), vim.fn.strcharpart(s, 1) -- one char always makes progress
+    end
     local lines, line = {}, ""
     local function push()
         if line ~= "" then
@@ -910,14 +936,15 @@ local function wrap_value(text, width)
         end
     end
     for word in text:gmatch("%S+") do
-        while #word > width do
+        while dw(word) > width do
             push()
-            lines[#lines + 1] = word:sub(1, width)
-            word = word:sub(width + 1)
+            local head, rest = take_cols(word, width)
+            lines[#lines + 1] = head
+            word = rest
         end
         if line == "" then
             line = word
-        elseif #line + 1 + #word <= width then
+        elseif dw(line) + 1 + dw(word) <= width then
             line = line .. " " .. word
         else
             push()
@@ -1562,8 +1589,25 @@ local function mason_rows(tab)
                         return
                     end
                     vim.notify(("lvim-installer: updating %d package(s)…"):format(#outdated))
-                    pkg.update("mason", outdated, function()
-                        vim.notify(("lvim-installer: updated %d package(s)"):format(#outdated))
+                    pkg.update("mason", outdated, function(results)
+                        -- Count backend failures (name → true | error string) instead of always
+                        -- claiming success.
+                        local failed = 0
+                        if type(results) == "table" then
+                            for _, n in ipairs(outdated) do
+                                if results[n] ~= true then
+                                    failed = failed + 1
+                                end
+                            end
+                        end
+                        if failed > 0 then
+                            vim.notify(
+                                ("lvim-installer: updated %d package(s), %d failed"):format(#outdated - failed, failed),
+                                vim.log.levels.WARN
+                            )
+                        else
+                            vim.notify(("lvim-installer: updated %d package(s)"):format(#outdated))
+                        end
                         M.refresh_open()
                     end)
                 end,
@@ -1602,8 +1646,10 @@ local function mason_rows(tab)
             expanded = state.expanded[name] ~= false,
         }
     end
-    section("sec_installed", "Installed (%d)", installed)
-    section("sec_available", "Available (%d)", available)
+    -- Namespace the section row-names per tab (like the mi_/ti_ item rows): state.expanded is keyed by
+    -- row name, so a bare "sec_installed" made a fold on one tab collapse it on every other tab too.
+    section("sec_installed_" .. tab.id, "Installed (%d)", installed)
+    section("sec_available_" .. tab.id, "Available (%d)", available)
     return rows
 end
 
@@ -1785,8 +1831,16 @@ local function parser_rows(tab)
                             return
                         end
                         vim.notify(("lvim-installer: updating %d parser(s)…"):format(#names))
-                        pkg.update("parser", names, function()
-                            vim.notify(("lvim-installer: updated %d parser(s)"):format(#names))
+                        pkg.update("parser", names, function(err)
+                            -- ts backend passes first_err | nil; report it instead of always "updated".
+                            if err then
+                                vim.notify(
+                                    ("lvim-installer: parser update failed: %s"):format(tostring(err)),
+                                    vim.log.levels.ERROR
+                                )
+                            else
+                                vim.notify(("lvim-installer: updated %d parser(s)"):format(#names))
+                            end
                             M.refresh_open()
                         end)
                     end
@@ -1836,8 +1890,10 @@ local function parser_rows(tab)
             expanded = state.expanded[name] ~= false,
         }
     end
-    section("sec_installed", "Installed (%d)", installed)
-    section("sec_available", "Available (%d)", available)
+    -- Namespace the section row-names per tab (like the mi_/ti_ item rows): state.expanded is keyed by
+    -- row name, so a bare "sec_installed" made a fold on one tab collapse it on every other tab too.
+    section("sec_installed_" .. tab.id, "Installed (%d)", installed)
+    section("sec_available_" .. tab.id, "Available (%d)", available)
     return rows
 end
 
@@ -2304,6 +2360,14 @@ local function sync_expanded()
     end)
 end
 
+--- Forget that git tags were loaded, so the next plugin-tab build re-reads them. Called after a
+--- registry refresh — otherwise the Version detail rows keep the first load's (now stale) tags until
+--- restart.
+---@return nil
+function M.invalidate_tags()
+    state.tags_requested = nil
+end
+
 --- Rebuild every tab's rows and re-render in place.
 --- By default the cursor follows the same logical row (by name) across the rebuild.
 --- With `opts.keep_position` it keeps the screen position instead — so after an
@@ -2355,7 +2419,15 @@ function M.mason_op(name, is_update)
     if not finish then
         return -- an op is already running on this package's row
     end
-    pkg.install("mason", { name }, function()
+    pkg.install("mason", { name }, function(results)
+        -- The mason backend reports per-item failure in `results` (name → true | error string); a
+        -- failed install would otherwise print "installed" / "already the latest version" (before ==
+        -- after is exactly what a failure looks like) — actively misleading. Surface the error.
+        local err = results and results[name] ~= true and results[name] or nil
+        if err then
+            finish(name .. ": " .. tostring(err), vim.log.levels.ERROR)
+            return
+        end
         local after = pkg.installed_version(name)
         local msg
         if is_update then
@@ -2379,8 +2451,14 @@ function M.parser_op(name)
     if not finish then
         return -- an op is already running on this parser's row
     end
-    pkg.install("parser", { name }, function()
-        finish(name .. ": parser installed")
+    pkg.install("parser", { name }, function(err)
+        -- The ts backend passes first_err | nil; a failed compile would otherwise print "parser
+        -- installed" over a failure. Surface it.
+        if err then
+            finish(name .. ": " .. tostring(err), vim.log.levels.ERROR)
+        else
+            finish(name .. ": parser installed")
+        end
     end)
 end
 
