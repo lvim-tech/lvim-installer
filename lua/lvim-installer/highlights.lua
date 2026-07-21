@@ -19,12 +19,13 @@ local function build()
     return {
         -- Toolbar buttons — THREE distinct states: INACTIVE (dim, not selected), HOVER (the keyboard cursor),
         -- ACTIVE (the applied button; set below). Picker-style hierarchy.
-        -- The LvimLsp diagnostics "Workspace" (scope) button style — a BLUE family: dim-blue inactive,
-        -- blue-bold active AND hover (the cursor = the accent, like the scope button), and the cursor ON the
-        -- active button on a subtle 0.3 BLUE BG TINT.
-        LvimInstallerToolbar = { fg = c.blend(c.blue, c.bg, 0.6) }, -- inactive: dim blue (mtint blue 0.6)
-        LvimInstallerToolbarHover = { fg = c.blue, bold = true }, -- hover: blue bold (the cursor = the accent)
-        LvimInstallerToolbarHoverActive = { fg = c.blue, bg = c.blend(c.blue, c.bg, 0.3), bold = true },
+        -- A YELLOW family: dim-yellow inactive, yellow-bold active AND hover (the cursor = the accent), and the
+        -- cursor ON the active button on a subtle 0.3 YELLOW BG TINT.
+        LvimInstallerToolbar = { fg = c.blend(c.yellow, c.bg, 0.6) }, -- inactive: dim yellow (mtint yellow 0.6)
+        LvimInstallerToolbarHover = { fg = c.yellow, bold = true }, -- hover: yellow bold (the cursor = the accent)
+        -- Cursor ON the applied filter: fg-ONLY (no bg tint). The keyless toolbar buttons already gain `[label]`
+        -- brackets on hover (button.lua) — that IS the hover affordance, so a bg tint on top double-marks it.
+        LvimInstallerToolbarHoverActive = { fg = c.yellow, bold = true },
         LvimInstallerToolbarIcon = { fg = c.orange },
         -- Section headers ("Loaded (n)" / "Lazy (n)")
         LvimInstallerSection = { fg = c.blue },
@@ -59,9 +60,9 @@ local function build()
         LvimInstallerActionRemove = { fg = c.red },
         LvimInstallerActionOpen = { fg = c.blue },
         LvimInstallerActionHint = { fg = c.cyan },
-        -- Active toolbar button (the APPLIED filter / selected option): blue + bold — the Workspace-button
-        -- accent (same hue as the dim inactive + the hover cursor).
-        LvimInstallerActive = { fg = c.blue, bold = true },
+        -- Active toolbar button (the APPLIED filter / selected option): yellow + bold — the same hue as the
+        -- dim inactive + the hover cursor.
+        LvimInstallerActive = { fg = c.yellow, bold = true },
         -- A plugin row while it is updating / reinstalling
         LvimInstallerProgress = { fg = c.red },
     }

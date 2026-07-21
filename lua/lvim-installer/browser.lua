@@ -1237,10 +1237,6 @@ local function plugin_rows(tab)
             table.insert(item.loaded and loaded_items or lazy_items, item)
         end
     end
-    -- the title counter (visible / total) for this tab
-    state.tab_counts = state.tab_counts or {}
-    state.tab_counts[tab.id] = { current = #loaded_items + #lazy_items, total = #items }
-
     -- Name column = longest name IN THE SECTION, so the second column (load time /
     -- update) sits exactly 5 past it — same rule across all tabs.
     local function section_w(list)
@@ -1622,8 +1618,6 @@ local function mason_rows(tab)
             table.insert(item.installed and installed or available, item)
         end
     end
-    state.tab_counts = state.tab_counts or {}
-    state.tab_counts[tab.id] = { current = #installed + #available, total = #items }
     local function section(name, label, list)
         -- Name column = longest name IN THIS SECTION, so the second column sits
         -- exactly 5 past it (a long item in the other section never pushes it).
@@ -1866,8 +1860,6 @@ local function parser_rows(tab)
             table.insert(item.installed and installed or available, item)
         end
     end
-    state.tab_counts = state.tab_counts or {}
-    state.tab_counts[tab.id] = { current = #installed + #available, total = #items }
     local function section(name, label, list)
         -- Name column = longest name IN THIS SECTION, so the second column sits
         -- exactly 5 past it (a long item in the other section never pushes it).
@@ -1996,11 +1988,6 @@ local function render_browser(layout, slot, backdrop)
     p.handle = ui.tabs({
         title = config.title, -- the panel's border-title text (config, default "Package Manager")
         title_pos = config.title_pos, -- alignment — ONE config value for every layout ("center" default)
-        -- The title counter (visible / total for the active tab) — the chassis renders it on the top
-        -- border (right-aligned, opposite the title); populated by the row builders into state.tab_counts.
-        title_count = function()
-            return (state.tab_counts or {})[state.active]
-        end,
         tabs = tabs,
         -- How the panel opens: a per-command override (`:LvimInstaller area`) → `config.browser.layout` →
         -- "float". "float" = a centred modal; "area" = the cmdline/minibuffer dock shared by the fzf pickers +
