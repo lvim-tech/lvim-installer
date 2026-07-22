@@ -29,6 +29,8 @@ local TABS = {
     { id = "DAP", kind = "mason", category = "DAP", label = "DAP" },
     { id = "Linter", kind = "mason", category = "Linter", label = "Linter" },
     { id = "Formatter", kind = "mason", category = "Formatter", label = "Formatter" },
+    { id = "Runtime", kind = "mason", category = "Runtime", label = "Runtime" },
+    { id = "Compiler", kind = "mason", category = "Compiler", label = "Compiler" },
     -- menu mode: its rows are childless action rows (save + each snapshot) — without it ui.tabs would collapse
     -- them into horizontal footer buttons instead of a vertical list in the body.
     { id = "snapshot", kind = "snapshot", label = "Snapshots", menu = true },

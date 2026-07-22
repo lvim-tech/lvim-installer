@@ -40,10 +40,12 @@ package's `categories` field in the Mason registry):
   DAP          dap                  Debug adapters        mason
   Linter       linter               Linters               mason
   Formatter    formatter            Formatters            mason
+  Runtime      runtime              Runtimes / helpers    mason
+  Compiler     compiler             Compilers / build     mason
   Treesitter   parsers              Treesitter parsers    ts
   Plugins      plugins              Neovim plugins        pack (vim.pack)
 
-The four Mason tabs share one engine (lvim-pkg's `mason` backend), which
+The six Mason tabs share one engine (lvim-pkg's `mason` backend), which
 installs from source via npm / pypi / golang / cargo / github — no dependency
 on mason.nvim. Per item: Install, Update, Reinstall, Remove and Pin a version
 (or a git branch / tag / commit for plugins). Failures surface through the
@@ -76,7 +78,7 @@ way and feed the first-open prompt — they are NOT required for the manager.
 
                                                           *:LvimInstaller*
   :LvimInstaller                  open the manager (last tab)
-  :LvimInstaller lsp|dap|linter|formatter|parsers|plugins
+  :LvimInstaller lsp|dap|linter|formatter|runtime|compiler|parsers|plugins
                                   open on a specific tab
   :LvimInstaller float|area|bottom
                                   open in a layout (float = centred modal,

@@ -71,7 +71,7 @@ function M.setup(opts)
         end
     end
 
-    -- :LvimInstaller [lsp|dap|linter|formatter|parsers|plugins] — open the manager at a
+    -- :LvimInstaller [lsp|dap|linter|formatter|runtime|compiler|parsers|plugins] — open the manager at a
     -- specific tab. :LvimInstaller update-registry [mason|ts|plugin|all] — refresh the
     -- catalogues and run the update checks (through the progress panel).
     vim.api.nvim_create_user_command("LvimInstaller", function(cmd)
@@ -93,6 +93,8 @@ function M.setup(opts)
             dap = "DAP",
             linter = "Linter",
             formatter = "Formatter",
+            runtime = "Runtime",
+            compiler = "Compiler",
             parsers = "parser",
             plugins = "plugin",
         }
@@ -128,6 +130,8 @@ function M.setup(opts)
                 "dap",
                 "linter",
                 "formatter",
+                "runtime",
+                "compiler",
                 "parsers",
                 "plugins",
                 "float",
@@ -253,7 +257,7 @@ function M.offer(ft)
 end
 
 --- Open the package manager window at a specific tab, in a specific layout.
----@param tab? "LSP"|"DAP"|"Linter"|"Formatter"|"parser"|"plugin"|"snapshot"  Initial tab
+---@param tab? "LSP"|"DAP"|"Linter"|"Formatter"|"Runtime"|"Compiler"|"parser"|"plugin"|"snapshot"  Initial tab
 ---@param layout? "area"|"float"|"bottom"  Overrides config.browser.layout for this session
 ---@return nil
 function M.open(tab, layout)

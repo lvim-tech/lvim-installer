@@ -74,6 +74,8 @@ return {
         DAP = "󰃤",
         Linter = "󰍉",
         Formatter = "󰉣",
+        Runtime = "󰜎",
+        Compiler = "󰛦",
         snapshot = "󰄄",
     },
     -- Per-action icons for the browser's inline action rows (keyed by action label). Real Nerd glyphs.

@@ -21,9 +21,8 @@ install / update / remove work is performed by `lvim-pkg`.
 ## What it manages
 
 The manager has one tab per installable type. The Mason packages are split by
-**category** (a package's `categories` field in the Mason registry), so LSP
-servers, debug adapters, linters and formatters each get their own tab and
-`:LvimInstaller` argument:
+**category** (a package's `categories` field in the Mason registry) — one tab per
+category the registry defines, so nothing in the registry is unbrowsable:
 
 | Tab | `:LvimInstaller` arg | What it installs | Backend |
 |---|---|---|---|
@@ -31,10 +30,12 @@ servers, debug adapters, linters and formatters each get their own tab and
 | **DAP** | `dap` | Debug adapters | `mason` |
 | **Linter** | `linter` | Linters | `mason` |
 | **Formatter** | `formatter` | Formatters | `mason` |
+| **Runtime** | `runtime` | Runtimes / SDK-side helpers | `mason` |
+| **Compiler** | `compiler` | Compilers / build tools | `mason` |
 | **Treesitter** | `parsers` | Treesitter parsers | `ts` |
 | **Plugins** | `plugins` | Neovim plugins (`vim.pack`) | `pack` |
 
-The four Mason tabs share one engine (`lvim-pkg`'s `mason` backend), which
+The six Mason tabs share one engine (`lvim-pkg`'s `mason` backend), which
 installs from source via npm / pypi / golang / cargo / github — no dependency on
 `mason.nvim`.
 
