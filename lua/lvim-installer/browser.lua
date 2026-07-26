@@ -17,6 +17,18 @@ local ui_mod = require("lvim-installer.ui")
 local snapshot = require("lvim-installer.snapshot")
 local ui_filters = require("lvim-ui.filters")
 local surface = require("lvim-ui.surface")
+
+--- Open a URL / path with the system handler, warning when nothing could open it. `vim.ui.open` reports
+--- a missing handler by RETURNING `nil, err` (it does not raise), so a bare `pcall` here silently did
+--- nothing — the user clicked "open homepage" and got no page and no message.
+---@param target string?
+---@return nil
+local function open_url(target)
+    local ok, why = require("lvim-utils.utils").open_url(target or "")
+    if not ok then
+        vim.notify(("lvim-installer: could not open %s (%s)"):format(target or "?", why or "?"), vim.log.levels.WARN)
+    end
+end
 local M = {}
 
 --- Tab definitions.  Mason tabs filter the registry by category; parser/plugin
@@ -846,7 +858,7 @@ local function plugin_action(name, action)
         })
     elseif action == "browse" then
         if info.src and info.src ~= "-" then
-            pcall(vim.ui.open, info.src)
+            open_url(info.src)
         end
     elseif action == "update" then
         update_action(name, info)
@@ -1006,12 +1018,12 @@ local function plugin_item_row(tab, item, w)
         if field == "Source" and info.src and info.src ~= "-" then
             suffix = "󰏌"
             run = function()
-                pcall(vim.ui.open, info.src)
+                open_url(info.src)
             end
         elseif field == "Path" and info.path then
             suffix = "󰝰"
             run = function()
-                pcall(vim.ui.open, info.path)
+                open_url(info.path)
             end
         elseif field == "Version" then
             suffix = "󰊢"
@@ -1387,7 +1399,7 @@ local function mason_action(name, action)
     if action == "browse" then
         local hp = mason_homepage(name)
         if hp then
-            pcall(vim.ui.open, hp)
+            open_url(hp)
         end
     elseif action == "delete" then
         local ui = ui_mod.get()
@@ -1437,7 +1449,7 @@ local function mason_item_row(tab, item, w)
         if field == "Homepage" then
             suffix = "󰏌" -- 󰏌
             run = function()
-                pcall(vim.ui.open, fv[2])
+                open_url(fv[2])
             end
         end
         local vlines = wrap_value(fv[2], maxv)
