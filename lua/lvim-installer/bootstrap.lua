@@ -377,7 +377,9 @@ function M.install(specs, opts)
     if not specs or #specs == 0 then
         return
     end
+    trace("install: enter (%d specs)", #specs)
     local missing = missing_plugins(specs)
+    trace("install: %d missing", #missing)
     if #missing == 0 then
         -- Nothing to install. `vim.pack.add` here only RECONCILES — it registers the specs with vim.pack for
         -- later update / build management; it is NOT needed to load the plugins (the host packadd's them).
@@ -392,7 +394,9 @@ function M.install(specs, opts)
         })
         return
     end
+    trace("install: notify_mod() probe")
     local nm = notify_mod()
+    trace("install: notify_mod() -> %s", tostring(nm ~= nil))
     if not nm then
         -- First-ever install: the UI itself is not cloned yet. Bootstrap the render set FIRST,
         -- silently, then render the rest through lvim-hud.notify — the "clone the manager first"
@@ -401,12 +405,17 @@ function M.install(specs, opts)
         -- whole first install falls back to the silent path).
         local ui_specs = closure_specs(specs, { "lvim-utils", "lvim-hud", "lvim-colorscheme" })
         if #ui_specs > 0 then
+            trace("install: UI bootstrap add START (%d specs)", #ui_specs)
             pcall(vim.pack.add, ui_specs, { load = true, confirm = false })
+            trace("install: UI bootstrap add RETURNED")
         end
         nm = notify_mod()
+        trace("install: notify_mod() after UI -> %s", tostring(nm ~= nil))
     end
     if nm then
+        trace("install: ensure_theme START")
         ensure_theme(opts.theme_fallbacks)
+        trace("install: ensure_theme DONE")
         run_notify(specs, missing, nm, opts)
     else
         -- Could not bring up lvim-utils — install silently. No separate float, ever.
