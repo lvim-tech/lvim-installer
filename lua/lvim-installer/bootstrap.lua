@@ -12,6 +12,18 @@
 
 local M = {}
 
+--- Trace one step of the install, when tracing is on (`LVIM_TRACE=1`). Optional: a missing tracer
+--- is silence, never an error — this panel must work without the data hub.
+---@param fmt string
+---@param ... any
+---@return nil
+local function trace(fmt, ...)
+    local ok, t = pcall(require, "lvim-pkg.trace")
+    if ok then
+        t.log(fmt, ...)
+    end
+end
+
 local FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
 --- Names of git plugins not yet cloned into the pack opt dir.
@@ -178,6 +190,7 @@ local function run_notify(specs, missing, nm, opts)
     -- THE PANEL IS UP. Whoever put something on screen while waiting for it (the loader's phase
     -- window) is told here, so the two never overlap: before this call there is nothing to see,
     -- after it this panel owns the screen.
+    trace("panel: first frame")
     if type(opts.on_visible) == "function" then
         pcall(opts.on_visible)
     end
@@ -220,7 +233,9 @@ local function run_notify(specs, missing, nm, opts)
         )
     end
 
+    trace("panel: vim.pack.add START (%d specs, %d missing)", #specs, #missing)
     local add_ok, add_err = pcall(vim.pack.add, specs, { load = false, confirm = false })
+    trace("panel: vim.pack.add RETURNED (ok=%s)", tostring(add_ok))
 
     if timer then
         timer:stop()
@@ -281,7 +296,9 @@ local function run_notify(specs, missing, nm, opts)
             for _, n in ipairs(build_names) do
                 b.status[n] = "building"
                 brender()
+                trace("build: %s start", n)
                 local pok, rok = pcall(opts.build_runner, n)
+                trace("build: %s returned", n)
                 b.status[n] = (pok and rok ~= false) and "done" or "error"
                 b.done = b.done + 1
                 brender()
