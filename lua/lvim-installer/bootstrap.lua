@@ -10,6 +10,18 @@
 --
 ---@module "lvim-installer.bootstrap"
 
+local config = require("lvim-installer.config")
+
+--- What the host loader passes to `install()`. Every field is optional: the panel runs on its own
+--- configured defaults when the caller names nothing.
+---@class LvimInstallerInstallOpts
+---@field theme_fallbacks? string[]  colorschemes to try for the panel, in priority order
+---@field close_delay?     integer   ms the finished panel stays on screen
+---@field build_timeout?   integer   ms to wait for a build hook to report back
+---@field on_visible?      fun()     called once the panel is on screen
+---@field build_runner?    fun(name: string, done: fun(ok: boolean, err: string|nil))  START the
+---   plugin's build hook; it reports its result through `done`, NOT through its return value
+
 local M = {}
 
 --- Trace one step of the install, when tracing is on (`LVIM_TRACE=1`). Optional: a missing tracer
@@ -98,8 +110,9 @@ local function status_row(lines, marks, spin, name, st, text)
 end
 
 --- Render the panel. During the clone phase `build` is nil (sliding window of cloning
---- plugins); during the build phase it is { names, status, done, total } and the clone
---- line collapses to its summary while the per-library build progress is shown.
+--- plugins); during the build phase it is { names, status, text, done, total } and the
+--- clone line collapses to its summary while the per-library build progress is shown.
+--- `build.text[name]` overrides a row's status text (a timed-out build says so).
 local function build_lines(missing, status, done_count, total, fi, width, build)
     local spin = FRAMES[fi]
     local done = done_count >= total
@@ -130,16 +143,38 @@ local function build_lines(missing, status, done_count, total, fi, width, build)
         -- Build phase: the clone summary stays above; the build header follows directly
         -- (no blank separator row, which read as a stray empty line under the bar).
         local bdone = build.done >= build.total
-        local bhead = bdone and string.format("  \xe2\x9c\x93 Built %d native libraries", build.total)
+        -- COUNTED, NOT ASSUMED. "done" is how many builds have REPORTED; how many actually
+        -- succeeded is a separate number, and the header must never claim more than that — a
+        -- failed or timed-out build reaching the end of the phase used to still read "✓ Built N".
+        local bok = 0
+        for _, n in ipairs(build.names) do
+            if build.status[n] == "done" then
+                bok = bok + 1
+            end
+        end
+        local bfail = bdone and bok < build.total
+        local bhead = (bfail and string.format("  \xe2\x9c\x97 Built %d of %d native libraries", bok, build.total))
+            or (bdone and string.format("  \xe2\x9c\x93 Built %d native libraries", build.total))
             or string.format("  %s Building native libraries   %d / %d", spin, build.done, build.total)
         local hrow = #lines
         lines[#lines + 1] = bhead
-        marks[#marks + 1] = { hrow, 2, 5, (bdone and "DiagnosticHint") or "String" }
-        marks[#marks + 1] = { hrow, 5, #bhead, (bdone and "LvimBootstrapDone") or "LvimBootstrapHead" }
+        marks[#marks + 1] = { hrow, 2, 5, (bfail and "DiagnosticError") or (bdone and "DiagnosticHint") or "String" }
+        marks[#marks + 1] = { hrow, 5, #bhead, (bdone and not bfail) and "LvimBootstrapDone" or "LvimBootstrapHead" }
         for _, n in ipairs(build.names) do
             local st = build.status[n]
-            local text = (st == "building" and "building\xe2\x80\xa6") or (st == "error" and "failed") or nil
+            local text = (build.text and build.text[n])
+                or (st == "building" and "building\xe2\x80\xa6")
+                or (st == "error" and "failed")
+                or nil
             status_row(lines, marks, spin, n, st, text)
+        end
+        -- A native compile is the one part of a first start that looks like a hang — say what the
+        -- wait is, for as long as it lasts.
+        local hint = config.bootstrap and config.bootstrap.build_hint
+        if not bdone and type(hint) == "string" and hint ~= "" then
+            local row = #lines
+            lines[#lines + 1] = "    " .. hint
+            marks[#marks + 1] = { row, 4, 4 + #hint, "Comment" }
         end
     end
     return lines, marks
@@ -149,6 +184,7 @@ end
 ---@param specs table[]
 ---@param missing string[]
 ---@param nm table
+---@param opts table  the caller's install options (`on_visible`, `build_runner`, timings)
 local function run_notify(specs, missing, nm, opts)
     local total = #missing
     local status, pending = {}, {}
@@ -256,10 +292,9 @@ local function run_notify(specs, missing, nm, opts)
         nm.notify("lvim-installer: install failed — " .. tostring(add_err), vim.log.levels.ERROR)
     end
 
-    -- Build phase: synchronously run each freshly-installed plugin's build hook (the
-    -- authors' convention — e.g. blink.cmp's :pwait()) while the panel shows per-library
-    -- "building … ✓ / ✗". A spinner timer keeps the panel animating during a build that
-    -- pumps the event loop (pwait); render + redraw also bracket each build.
+    -- Build phase: run each freshly-installed plugin's build hook while the panel shows
+    -- per-library "building … ✓ / ✗". A spinner timer keeps the panel animating; render +
+    -- redraw bracket every state change.
     local build_names = {}
     for _, n in ipairs(missing) do
         -- Only build plugins that actually cloned (status == "done"): a build hook against a repo
@@ -269,7 +304,7 @@ local function run_notify(specs, missing, nm, opts)
         end
     end
     if #build_names > 0 and opts and type(opts.build_runner) == "function" then
-        local b = { names = build_names, status = {}, done = 0, total = #build_names }
+        local b = { names = build_names, status = {}, text = {}, done = 0, total = #build_names }
         for _, n in ipairs(build_names) do
             b.status[n] = "pending"
         end
@@ -289,7 +324,41 @@ local function run_notify(specs, missing, nm, opts)
                 end)
             )
         end
-        -- Run the build loop under pcall so that an error out of brender (nm.progress_update) can NOT
+        -- THE BUILD CONTRACT IS ASYNCHRONOUS: `build_runner(name, done)` STARTS the build and
+        -- returns at once — a shell hook is a `vim.system` spawn, so "start a cargo build" is two
+        -- milliseconds and the build itself is a minute (measured: `lvim-fuzzy` returned in 2.4 ms).
+        -- Counting that return as the result is what painted "✓ Built N native libraries" over
+        -- compiles that had barely begun, closed the panel on its timer, and left the machine
+        -- grinding under a freshly drawn dashboard — read as a freeze. A row now stays "building …"
+        -- until the runner answers with `done(ok, err)`, and the phase is over only when every one
+        -- of them has.
+        --
+        -- Waiting is `vim.wait`, which PUMPS the event loop exactly as the `vim.pack.add` above
+        -- does: the spinner timer keeps ticking and the builds' own callbacks land while it waits.
+        -- All builds are started first and run CONCURRENTLY (each is its own process), so the wait
+        -- is the slowest one, not their sum.
+        --
+        ---@type table<string, boolean>  builds that have already reported
+        local answered = {}
+        --- Record one build's outcome, exactly once — a hook that calls back twice (or answers
+        --- after being given up on) must not count twice. The COUNTER MOVES BEFORE THE RENDER, so
+        --- a failing panel update can never leave the wait below hanging on a build that is over.
+        ---@param n string
+        ---@param ok boolean
+        ---@param err string|nil
+        ---@param text string|nil  row text overriding the default ("failed")
+        local function settle(n, ok, err, text)
+            if answered[n] then
+                return
+            end
+            answered[n] = true
+            b.status[n] = ok and "done" or "error"
+            b.text[n] = text
+            b.done = b.done + 1
+            trace("build: %s done (ok=%s%s)", n, tostring(ok), err and (" err=" .. tostring(err)) or "")
+            brender()
+        end
+        -- Run the loop under pcall so that an error out of brender (nm.progress_update) can NOT
         -- skip the btimer teardown below — otherwise a uv timer would keep firing every 80ms forever,
         -- re-raising inside schedule_wrap. Teardown must be unconditional.
         local loop_ok, loop_err = pcall(function()
@@ -297,11 +366,36 @@ local function run_notify(specs, missing, nm, opts)
                 b.status[n] = "building"
                 brender()
                 trace("build: %s start", n)
-                local pok, rok = pcall(opts.build_runner, n)
-                trace("build: %s returned", n)
-                b.status[n] = (pok and rok ~= false) and "done" or "error"
-                b.done = b.done + 1
-                brender()
+                -- `ok ~= false`, not `ok == true`: a runner that answers a bare `done()` means "it
+                -- finished, nothing to report" — only an explicit false is a failure.
+                local pok, perr = pcall(opts.build_runner, n, function(ok, err)
+                    settle(n, ok ~= false, err)
+                end)
+                if not pok then
+                    settle(n, false, perr) -- the runner threw before it could arrange completion
+                end
+            end
+            local timeout = (config.bootstrap and config.bootstrap.build_timeout) or (10 * 60 * 1000)
+            if opts.build_timeout then
+                timeout = opts.build_timeout
+            end
+            trace("build: waiting for %d builds (timeout %d ms)", b.total - b.done, timeout)
+            local finished = vim.wait(timeout, function()
+                return b.done >= b.total
+            end, 50)
+            if not finished then
+                -- Given up on, NOT failed: the process is still running and still writing its
+                -- artefact. It leaves no marker, so the self-healing sweep re-runs whatever it
+                -- did not finish — the start must not hang on it forever.
+                for _, n in ipairs(build_names) do
+                    settle(n, false, "timed out", "still building\xe2\x80\xa6")
+                end
+                nm.notify(
+                    "lvim-installer: a build is still running after "
+                        .. tostring(math.max(1, math.floor(timeout / 1000 + 0.5)))
+                        .. "s — it continues in the background and is retried on the next start",
+                    vim.log.levels.WARN
+                )
             end
         end)
         if btimer then
@@ -314,10 +408,13 @@ local function run_notify(specs, missing, nm, opts)
         end
     end
 
+    -- ONLY NOW MAY IT CLOSE. Reaching this line means every build has reported (or been given up
+    -- on), so the panel is never taken off screen while one is still running.
+    local close_delay = opts.close_delay or (config.bootstrap and config.bootstrap.close_delay) or 4000
     vim.defer_fn(function()
         pcall(vim.api.nvim_del_augroup_by_id, grp)
         nm.progress_clear("lvim-bootstrap")
-    end, 4000)
+    end, close_delay)
 end
 
 --- Specs in the dependency closure of `roots` (transitive via spec.deps). Used to
@@ -354,9 +451,11 @@ end
 
 --- Install all specs via vim.pack, showing a progress panel for the ones still
 --- missing. Always calls vim.pack.add (registering every spec); the panel only
---- appears when something needs cloning. Blocks until the install finishes.
+--- appears when something needs cloning. Blocks until the install finishes —
+--- INCLUDING the build hooks of what it just installed, which report back
+--- asynchronously (see the build phase).
 ---@param specs table[]  vim.pack specs ({ src, name, version })
----@param opts? { theme_fallbacks?: string[], close_delay?: integer, on_visible?: fun() }
+---@param opts? LvimInstallerInstallOpts
 ---@return nil
 function M.install(specs, opts)
     opts = opts or {}

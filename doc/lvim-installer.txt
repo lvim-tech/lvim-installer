@@ -122,6 +122,11 @@ Lua: >lua
       field_icons = { Status = "󰑐", Version = "󰓹", Source = "󰘬", ... },
       ensure_installed = {},     -- Mason tools to install silently (allowlist)
       update_concurrency = 4,    -- plugins updated at once during "Update all"
+      bootstrap = {              -- the FIRST-START install panel (not the browser)
+          close_delay = 4000,           -- ms the finished panel stays on screen
+          build_timeout = 10 * 60 * 1000, -- ceiling on waiting for a build hook
+          build_hint = "compiling native code — this runs once",
+      },
       progress = { name = "Installer", icon = "󰏗", done_ttl = 4000, ... },
       popup_global = { position = "editor", width = 0.8, height = "auto", ... },
   })
@@ -149,6 +154,13 @@ Lua: >lua
   field_icons         browser inline detail-row icons, keyed by field name
   ensure_installed    Mason tools to install silently at setup (allowlist)
   update_concurrency  batch size for "Update all" of plugins
+  bootstrap           the first-start install panel: close_delay (how long the
+                      finished panel lingers), build_timeout (how long the
+                      build phase waits for a build hook to report back) and
+                      build_hint (the line shown while a native build runs).
+                      The build phase is ASYNCHRONOUS: each row stays at
+                      "building …" until the hook answers, and the panel never
+                      closes over a build that is still running
   progress            install progress panel (name, icon, spinner, done_ttl)
   popup_global        manager / prompt window: geometry, icons, labels, keys
                       (passed verbatim to lvim-utils.ui.new())

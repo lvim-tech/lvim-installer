@@ -11,12 +11,18 @@
 ---@field prompt       table   Unified prompt appearance (title_icon, snooze_ms, width)
 ---@field progress     table   Progress channel appearance (name, icon, spinner, header_hl)
 ---@field update_concurrency integer  Plugins updated at once during "Update all"
+---@field bootstrap    LvimInstallerBootstrapConfig  The first-start install panel (close delay, build wait)
 ---@field ensure_installed string[]  Mason tools to install silently at setup (allowlist)
 ---@field browser     table   The Package Manager panel: `layout` = "area"|"float"|"bottom", `keys` = its row-action keys + the `g?` cheatsheet
 ---@field dock        LvimInstallerDockConfig  Dock integration (namespaced like lvim-dependencies' `config.dock`)
 ---@field tab_icons   table<string,string>  Browser tab-bar icons keyed by tab id (Nerd Font glyphs)
 ---@field action_icons table<string,string>  Inline action-row icons keyed by action label (Nerd Font glyphs)
 ---@field field_icons  table<string,string>  Inline detail-row icons keyed by field name (Nerd Font glyphs)
+
+---@class LvimInstallerBootstrapConfig
+---@field close_delay   integer  ms the finished first-start panel stays on screen
+---@field build_timeout integer  ms the build phase waits for a build hook to report back
+---@field build_hint    string   line shown under the build header while a build is running
 
 ---@class LvimInstallerDockConfig
 ---@field dock_stack boolean true = the browser is a managed dock-STACK consumer; false = geometry-only standalone
@@ -114,6 +120,21 @@ return {
     -- How many plugins to update at once during "Update all" (vim.pack has no
     -- concurrency option, so updates run in sequential batches of this size).
     update_concurrency = 4,
+    -- The FIRST-START install panel (the one the host loader drives through
+    -- `lvim-installer.bootstrap.install`) — not the browser.
+    bootstrap = {
+        -- How long the finished panel stays on screen before it clears.
+        close_delay = 4000,
+        -- The build phase is ASYNC: a build hook reports through a callback, so the panel waits for
+        -- it instead of counting a spawn as a success. This is the hard ceiling on that wait — a
+        -- safety net, not an expected duration. A hook still silent after it is reported as timed
+        -- out and the start continues; the build keeps running and the self-healing sweep picks up
+        -- whatever it left unfinished.
+        build_timeout = 10 * 60 * 1000,
+        -- Shown under the build header while a native build is running, because that wait is the
+        -- one part of a first start that looks like a hang.
+        build_hint = "compiling native code — this runs once",
+    },
     progress = {
         id = "lvim-installer",
         name = "Installer",

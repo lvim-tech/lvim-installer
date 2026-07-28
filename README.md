@@ -220,6 +220,13 @@ require("lvim-installer").setup({
     -- How many plugins to update at once during "Update all" (sequential batches).
     update_concurrency = 4,
 
+    -- The first-start install panel (not the browser).
+    bootstrap = {
+        close_delay = 4000, -- ms the finished panel stays on screen
+        build_timeout = 10 * 60 * 1000, -- ceiling on waiting for an async build hook to report
+        build_hint = "compiling native code — this runs once",
+    },
+
     -- Progress panel (driven through lvim-utils.notify).
     progress = {
         id = "lvim-installer",
@@ -253,6 +260,7 @@ require("lvim-installer").setup({
 | `action_icons` | the browser's inline action-row icons, keyed by action label |
 | `field_icons` | the browser's inline detail-row icons, keyed by field name |
 | `update_concurrency` | batch size for "Update all" of plugins |
+| `bootstrap` | the first-start install panel: how long the finished panel lingers (`close_delay`), how long the build phase waits for a build hook to report back (`build_timeout`), and the line shown while a native build runs (`build_hint`). The build phase is asynchronous — the panel holds each row at "building …" until the hook answers, and never closes over a running build |
 | `progress` | the install progress panel (name, icon, spinner, done timeout) |
 | `popup_global` | the manager / prompt window: geometry, icons, labels, key bindings |
 
