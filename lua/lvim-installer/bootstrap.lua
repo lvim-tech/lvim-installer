@@ -113,20 +113,28 @@ end
 --- plugins); during the build phase it is { names, status, text, done, total } and the
 --- clone line collapses to its summary while the per-library build progress is shown.
 --- `build.text[name]` overrides a row's status text (a timed-out build says so).
-local function build_lines(missing, status, done_count, total, fi, width, build)
+--- `over` = the clone phase has ENDED (vim.pack.add returned), so the header must stop
+--- animating even if not every plugin landed.
+local function build_lines(missing, status, done_count, total, fi, width, build, over)
     local spin = FRAMES[fi]
     local done = done_count >= total
     local bar_w = width - 4
     local frac = total > 0 and (done_count / total) or 1
     local filled = math.min(bar_w, math.floor(bar_w * frac + 0.5))
     local bar = ("\xe2\x94\x81"):rep(filled) .. ("\xe2\x94\x80"):rep(bar_w - filled)
-    local head = done and string.format("  \xe2\x9c\x93 Installed %d plugins", total)
+    -- A HEADER THAT NEVER RESOLVES IS A LIE TOO. When the install ends with something missing, the
+    -- count stops short and the spinner used to keep turning at "58 / 60" until the panel silently
+    -- vanished on its timer. The phase being over is its own fact, separate from everything having
+    -- succeeded — so it ends either with a ✓ or with what actually happened.
+    local short = over and not done
+    local head = (short and string.format("  \xe2\x9c\x97 Installed %d of %d plugins", done_count, total))
+        or (done and string.format("  \xe2\x9c\x93 Installed %d plugins", total))
         or string.format("  %s Installing plugins   %d / %d", spin, done_count, total)
     -- No leading blank line: the notify channel already renders its own header row above
     -- these lines, so a blank here would push everything one row down.
     local lines = { head, "  " .. bar }
     local marks = {}
-    marks[#marks + 1] = { 0, 2, 5, (done and "DiagnosticHint") or "String" }
+    marks[#marks + 1] = { 0, 2, 5, (short and "DiagnosticError") or (done and "DiagnosticHint") or "String" }
     marks[#marks + 1] = { 0, 5, #lines[1], (done and "LvimBootstrapDone") or "LvimBootstrapHead" }
     local fb = 2 + #("\xe2\x94\x81"):rep(filled)
     marks[#marks + 1] = { 1, 2, fb, "Special" }
@@ -188,8 +196,21 @@ end
 local function run_notify(specs, missing, nm, opts)
     local total = #missing
     local status, pending = {}, {}
+    local done_count, fi = 0, 1
+    -- ALREADY ON DISK = ALREADY INSTALLED. `missing` is taken before this module clones its OWN
+    -- render set (lvim-utils / lvim-hud / lvim-colorscheme) with plain `git`, so those plugins are
+    -- still listed as missing while the directory is right there. `vim.pack.add` then has nothing
+    -- to do for them and NEVER fires `PackChanged` — they stayed "pending" forever, the count
+    -- stopped two short ("58 / 60") and the panel disappeared on its timer without ever resolving.
+    -- They are installed, by this panel, in this pass — so they start as done.
+    local opt_dir = vim.fn.stdpath("data") .. "/site/pack/core/opt/"
     for _, n in ipairs(missing) do
-        status[n], pending[n] = "pending", true
+        if vim.fn.isdirectory(opt_dir .. n) == 1 then
+            status[n] = "done"
+            done_count = done_count + 1
+        else
+            status[n], pending[n] = "pending", true
+        end
     end
     -- Which of the missing plugins carry a build hook (reported by the host loader).
     local has_build = {}
@@ -198,8 +219,6 @@ local function run_notify(specs, missing, nm, opts)
             has_build[spec.name] = true
         end
     end
-    local done_count, fi = 0, 1
-
     -- Bold theme groups (rebuilt on ColorScheme, as in the float path).
     local function bold_of(name, src)
         local h = vim.api.nvim_get_hl(0, { name = src, link = false })
@@ -218,8 +237,11 @@ local function run_notify(specs, missing, nm, opts)
         header_hl = "LvimNotifyHeaderInfo",
     })
 
+    -- Set once `vim.pack.add` has returned: from then on the header states an outcome instead of
+    -- animating a count that can no longer move.
+    local phase_over = false
     local function render()
-        local lines, marks = build_lines(missing, status, done_count, total, fi, 52)
+        local lines, marks = build_lines(missing, status, done_count, total, fi, 52, nil, phase_over)
         nm.progress_update("lvim-bootstrap", lines, marks)
     end
     render()
@@ -272,6 +294,7 @@ local function run_notify(specs, missing, nm, opts)
     trace("panel: vim.pack.add START (%d specs, %d missing)", #specs, #missing)
     local add_ok, add_err = pcall(vim.pack.add, specs, { load = false, confirm = false })
     trace("panel: vim.pack.add RETURNED (ok=%s)", tostring(add_ok))
+    phase_over = true
 
     if timer then
         timer:stop()
@@ -309,7 +332,7 @@ local function run_notify(specs, missing, nm, opts)
             b.status[n] = "pending"
         end
         local function brender()
-            local lines, marks = build_lines(missing, status, done_count, total, fi, 52, b)
+            local lines, marks = build_lines(missing, status, done_count, total, fi, 52, b, true)
             nm.progress_update("lvim-bootstrap", lines, marks)
             pcall(vim.cmd, "redraw")
         end
