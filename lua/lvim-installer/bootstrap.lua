@@ -1,5 +1,5 @@
 -- lvim-installer.bootstrap: first-start / missing-plugin install progress.
--- The host loader (core.pack) delegates installation here so it never has to build
+-- The host loader (lvim-pack) delegates installation here so it never has to build
 -- UI itself: require("lvim-installer.bootstrap").install(specs, opts). This module
 -- owns the whole experience — detecting what is missing, theming the panel, the live
 -- progress float, and the blocking vim.pack.add that drives it.
@@ -337,6 +337,20 @@ end
 ---@return nil
 function M.install(specs, opts)
     opts = opts or {}
+    -- THE THEME IS THIS MODULE'S CONCERN, not the loader's. lvim-colorscheme owns the active theme
+    -- and is not loaded yet at install time, so the name is read from the plain mirror file the
+    -- colorscheme writes. The host loader used to read it and pass it in — which made a loader know
+    -- about colorschemes; `ensure_theme` already owns the theme here, so the default belongs here
+    -- too. A caller that names its own fallbacks still wins.
+    if opts.theme_fallbacks == nil then
+        local mirror = vim.fn.stdpath("data") .. "/lvim-colorscheme/theme"
+        if vim.fn.filereadable(mirror) == 1 then
+            local lines = vim.fn.readfile(mirror)
+            if lines and lines[1] and lines[1] ~= "" then
+                opts.theme_fallbacks = { lines[1] }
+            end
+        end
+    end
     if not specs or #specs == 0 then
         return
     end
