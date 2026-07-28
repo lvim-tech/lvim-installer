@@ -405,9 +405,28 @@ function M.install(specs, opts)
         -- whole first install falls back to the silent path).
         local ui_specs = closure_specs(specs, { "lvim-utils", "lvim-hud", "lvim-colorscheme" })
         if #ui_specs > 0 then
-            trace("install: UI bootstrap add START (%d specs)", #ui_specs)
-            pcall(vim.pack.add, ui_specs, { load = true, confirm = false })
-            trace("install: UI bootstrap add RETURNED")
+            -- CLONED WITH PLAIN `git`, NOT `vim.pack.add`. This is the FIRST `vim.pack.add` of the
+            -- session, and that call reconciles the WHOLE lockfile — so asking it for three plugins
+            -- made it think about all sixty-four first: measured at 10.1 s for three clones, while
+            -- the real install of the other sixty took 3.2 s right after. The host loader already
+            -- fetches its own bootstrap set this way for exactly this reason; the panel's own
+            -- render set is the same case one step further in.
+            --
+            -- `packadd` afterwards is what `load = true` did for us before.
+            local opt_dir = vim.fn.stdpath("data") .. "/site/pack/core/opt/"
+            trace("install: UI bootstrap clone START (%d specs)", #ui_specs)
+            vim.fn.mkdir(opt_dir, "p")
+            for _, spec in ipairs(ui_specs) do
+                if vim.fn.isdirectory(opt_dir .. spec.name) == 0 then
+                    trace("install: clone %s", spec.name)
+                    pcall(
+                        vim.fn.system,
+                        { "git", "clone", "--filter=blob:none", spec.src, opt_dir .. spec.name }
+                    )
+                end
+                pcall(vim.cmd.packadd, spec.name)
+            end
+            trace("install: UI bootstrap clone RETURNED")
         end
         nm = notify_mod()
         trace("install: notify_mod() after UI -> %s", tostring(nm ~= nil))
