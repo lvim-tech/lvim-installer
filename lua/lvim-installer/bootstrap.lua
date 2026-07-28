@@ -175,6 +175,12 @@ local function run_notify(specs, missing, nm, opts)
         nm.progress_update("lvim-bootstrap", lines, marks)
     end
     render()
+    -- THE PANEL IS UP. Whoever put something on screen while waiting for it (the loader's phase
+    -- window) is told here, so the two never overlap: before this call there is nothing to see,
+    -- after it this panel owns the screen.
+    if type(opts.on_visible) == "function" then
+        pcall(opts.on_visible)
+    end
 
     local grp = vim.api.nvim_create_augroup("lvim_bootstrap_install", { clear = true })
     local function on_pack(active)
@@ -333,7 +339,7 @@ end
 --- missing. Always calls vim.pack.add (registering every spec); the panel only
 --- appears when something needs cloning. Blocks until the install finishes.
 ---@param specs table[]  vim.pack specs ({ src, name, version })
----@param opts? { theme_fallbacks?: string[], close_delay?: integer }
+---@param opts? { theme_fallbacks?: string[], close_delay?: integer, on_visible?: fun() }
 ---@return nil
 function M.install(specs, opts)
     opts = opts or {}
