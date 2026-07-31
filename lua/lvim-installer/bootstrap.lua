@@ -541,10 +541,7 @@ function M.install(specs, opts)
             for _, spec in ipairs(ui_specs) do
                 if vim.fn.isdirectory(opt_dir .. spec.name) == 0 then
                     trace("install: clone %s", spec.name)
-                    pcall(
-                        vim.fn.system,
-                        { "git", "clone", "--filter=blob:none", spec.src, opt_dir .. spec.name }
-                    )
+                    pcall(vim.fn.system, { "git", "clone", "--filter=blob:none", spec.src, opt_dir .. spec.name })
                 end
                 pcall(vim.cmd.packadd, spec.name)
             end

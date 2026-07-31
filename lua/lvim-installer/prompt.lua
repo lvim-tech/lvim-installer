@@ -170,9 +170,12 @@ function M.show(ft)
         title = config.prompt.title_icon .. "Install for " .. ft,
         title_pos = "center", -- centre the title over the dialog (not the flush-left panel default)
         tabs = tabs,
-        -- Auto-FIT the width to the content (the item rows / action bar), never wider than config.prompt.width.
-        -- A size SPEC forces auto-fit over the shared FIXED float width.
+        -- Auto-FIT to the content (the item rows / action bar), never larger than config.prompt.width. A size
+        -- SPEC forces auto over the shared FIXED float size, on BOTH axes: this is a popup, and a popup
+        -- always fits what it says — with only the width forced, turning the central "float height auto
+        -- (fit)" off stretched a three-item prompt to the full fixed panel height.
         width = { auto = true, max = config.prompt.width },
+        height = { auto = true, max = config.prompt.width },
         -- Footer shows only these action buttons, in order (no default nav hints).
         footer_hints = {
             { key = "a", label = "All" },
