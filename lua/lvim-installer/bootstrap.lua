@@ -73,7 +73,7 @@ local function ensure_theme(fallbacks)
     vim.opt.eventignore:append("ColorScheme")
     vim.opt.eventignore:append("User")
     for _, name in ipairs(fallbacks or {}) do
-        if type(name) == "string" and name ~= "" and pcall(vim.cmd, "colorscheme " .. name) then
+        if type(name) == "string" and name ~= "" and pcall(vim.cmd.colorscheme, name) then
             break
         end
     end
@@ -334,7 +334,7 @@ local function run_notify(specs, missing, nm, opts)
         local function brender()
             local lines, marks = build_lines(missing, status, done_count, total, fi, 52, b, true)
             nm.progress_update("lvim-bootstrap", lines, marks)
-            pcall(vim.cmd, "redraw")
+            pcall(vim.cmd.redraw)
         end
         local btimer = vim.uv.new_timer()
         if btimer then

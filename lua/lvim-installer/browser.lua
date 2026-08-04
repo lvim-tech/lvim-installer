@@ -12,7 +12,6 @@ local registry = require("lvim-pkg.registry")
 local purl = require("lvim-pkg.registry.purl")
 local pkg_paths = require("lvim-pkg.paths")
 local config = require("lvim-installer.config")
-local progress = require("lvim-installer.progress")
 local ui_mod = require("lvim-installer.ui")
 local snapshot = require("lvim-installer.snapshot")
 local ui_filters = require("lvim-ui.filters")
@@ -297,18 +296,8 @@ local function plugin_label(info, pin)
     return (table.concat(parts, "    "):gsub("%s+$", "")) -- drop the reserved column when the row has no tags
 end
 
--- Per-action icon for the inline action rows (4-space indent baked in).
-local ACTION_ICON = config.action_icons
-
 -- Per-field icons for the inline detail rows.
 local FIELD_ICON = config.field_icons
-
--- Pad an icon to a fixed display width so every row's text starts at the same column.
-local ICON_W = 2
-local function cell(glyph)
-    glyph = glyph or ""
-    return glyph .. string.rep(" ", math.max(0, ICON_W - vim.fn.strdisplaywidth(glyph)))
-end
 
 -- Segmented filter modes shown as the top toolbar bar.
 local FILTER_MODES = { "All", "Loaded", "Lazy", "Deps", "Outdated", "Up-to-date", "Search" }
@@ -374,8 +363,8 @@ end
 ---@param pin table|nil  the stored convention { version, reftype, branch }, or nil
 ---@return table[]
 local function plugin_detail_fields(info, pin)
-    local state = info.loaded and ("loaded · " .. (info.lazy and "lazy" or "eager")) or "not loaded · lazy"
-    local f = { { "State", state } }
+    local loaded_state = info.loaded and ("loaded · " .. (info.lazy and "lazy" or "eager")) or "not loaded · lazy"
+    local f = { { "State", loaded_state } }
     if info.time_ms then
         f[#f + 1] = { "Load time", string.format("%.2f ms", info.time_ms) }
     end
@@ -431,8 +420,7 @@ end
 --- The current choice is pre-selected (marked by the ➤ cursor, no extra text), and
 --- each step (except the first) maps Backspace to go back one level (footer hint).
 ---@param name string
----@param info table
-local function reinstall_menu(name, info)
+local function reinstall_menu(name)
     local ui = ui_mod.get()
     if not ui then
         return
@@ -670,8 +658,7 @@ end
 --- tag lock → newest tag in the prefix; exact tag / fixed commit → frozen. No pin →
 --- live git state (branch advances; detached is frozen).
 ---@param name string
----@param info table
-local function update_action(name, info)
+local function update_action(name)
     if state.updating_all then
         vim.notify("lvim-installer: an Update all is in progress", vim.log.levels.WARN)
         return
@@ -682,8 +669,10 @@ local function update_action(name, info)
     end
     pkg.plugin_fetch(name, function()
         local pin = pkg.get_pin_full("plugin", name)
+        -- `rt` is only ever set when there IS a pin, but each test names `pin` too so the
+        -- non-nil-ness is visible to the reader (and the checker) at every use below.
         local rt = pin and pin.reftype
-        if rt == "tag" and pin.branch then
+        if pin and rt == "tag" and pin.branch then
             local newest = pkg.plugin_resolve_tag(name, pin.branch)
             local cur = pkg.plugin_current(name)
             if newest and (not cur or cur.value ~= newest) then
@@ -698,7 +687,7 @@ local function update_action(name, info)
             else
                 finish(name .. ": already newest in " .. pin.branch .. ".x")
             end
-        elseif rt == "branch" then
+        elseif pin and rt == "branch" then
             pkg.plugin_update_branch(name, pin.version, function(err)
                 if err then
                     finish("Update failed for " .. name .. ": " .. err, vim.log.levels.ERROR)
@@ -707,7 +696,7 @@ local function update_action(name, info)
                     finish(name .. ": " .. pin.version .. " updated to tip")
                 end
             end)
-        elseif rt == "tag" or rt == "commit" then
+        elseif pin and (rt == "tag" or rt == "commit") then
             finish(name .. " is fixed (" .. rt .. " " .. tostring(pin.version) .. ") — use Reinstall")
         else
             -- No stored convention (or no pin at all) → live git state. (Previously an early
@@ -861,9 +850,9 @@ local function plugin_action(name, action)
             open_url(info.src)
         end
     elseif action == "update" then
-        update_action(name, info)
+        update_action(name)
     elseif action == "reinstall" then
-        reinstall_menu(name, info)
+        reinstall_menu(name)
     end
 end
 
@@ -1002,7 +991,7 @@ local function item_action_bar(name, specs)
     return { type = "bar", name = name, align = "center", child = true, items = items }
 end
 
-local function plugin_item_row(tab, item, w)
+local function plugin_item_row(item, w)
     local info = item.info
     local children = {}
     -- Detail rows are navigable (type "action") so j/k can reach them. Source / Path
@@ -1265,7 +1254,7 @@ local function plugin_rows(tab)
         local w = section_w(loaded_items)
         local kids = {}
         for _, item in ipairs(loaded_items) do
-            kids[#kids + 1] = plugin_item_row(tab, item, w)
+            kids[#kids + 1] = plugin_item_row(item, w)
         end
         rows[#rows + 1] = {
             type = "action",
@@ -1282,7 +1271,7 @@ local function plugin_rows(tab)
         local w = section_w(lazy_items)
         local kids = {}
         for _, item in ipairs(lazy_items) do
-            kids[#kids + 1] = plugin_item_row(tab, item, w)
+            kids[#kids + 1] = plugin_item_row(item, w)
         end
         rows[#rows + 1] = {
             type = "action",
@@ -1340,11 +1329,11 @@ local function mason_detail_fields(item)
         f[#f + 1] = { "Status", mason_outdated(item) and "outdated" or "up to date" }
     end
     if sp.source and sp.source.id then
-        local purl = sp.source.id
+        local purl_id = sp.source.id
         if item.version then
-            purl = purl:gsub("^(.*@)[^@#?]+(.*)$", "%1" .. item.version .. "%2")
+            purl_id = purl_id:gsub("^(.*@)[^@#?]+(.*)$", "%1" .. item.version .. "%2")
         end
-        f[#f + 1] = { "Purl", (purl:gsub("%%40", "@")) }
+        f[#f + 1] = { "Purl", (purl_id:gsub("%%40", "@")) }
     end
     if sp.description and sp.description ~= "" then
         f[#f + 1] = { "Description", (sp.description:gsub("%s+", " ")) }
@@ -1432,11 +1421,10 @@ local function mason_action(name, action)
 end
 
 --- One Mason item as an accordion row: header + detail rows + action bar.
----@param tab table
 ---@param item table
 ---@param w integer
 ---@return table
-local function mason_item_row(tab, item, w)
+local function mason_item_row(item, w)
     local children = {}
     local fields = mason_detail_fields(item)
     local fld_outdated = mason_outdated(item)
@@ -1641,7 +1629,7 @@ local function mason_rows(tab)
         end
         local kids = {}
         for _, item in ipairs(list) do
-            kids[#kids + 1] = mason_item_row(tab, item, w)
+            kids[#kids + 1] = mason_item_row(item, w)
         end
         rows[#rows + 1] = {
             type = "action",
@@ -1705,11 +1693,10 @@ local function parser_action(name, action)
 end
 
 --- One parser as an accordion row: header + a Status/Path detail + action bar.
----@param tab table
 ---@param item table
 ---@param w integer
 ---@return table
-local function parser_item_row(tab, item, w)
+local function parser_item_row(item, w)
     local children = {}
     local ppath = pkg_paths.ts() .. "/parser/" .. item.name .. ".so"
     local fields = {
@@ -1883,7 +1870,7 @@ local function parser_rows(tab)
         end
         local kids = {}
         for _, item in ipairs(list) do
-            kids[#kids + 1] = parser_item_row(tab, item, w)
+            kids[#kids + 1] = parser_item_row(item, w)
         end
         rows[#rows + 1] = {
             type = "action",
@@ -1905,9 +1892,8 @@ end
 
 --- Rows for the Snapshots tab: one selectable row per snapshot file, the active one
 --- marked. Selecting a non-active snapshot switches to it and offers to restore the diff.
----@param tab table
 ---@return table[]
-local function snapshot_rows(tab)
+local function snapshot_rows()
     local snaps = pkg.snapshots()
     local active = pkg.active_snapshot()
     local rows = {
@@ -1966,7 +1952,7 @@ local function rows_for(tab)
     elseif tab.kind == "parser" then
         return parser_rows(tab)
     elseif tab.kind == "snapshot" then
-        return snapshot_rows(tab)
+        return snapshot_rows()
     end
     -- Every TABS entry is plugin/mason/parser/snapshot, so one of the branches above always returns.
     return {}
@@ -2327,7 +2313,7 @@ row_spinner = function(rowname, verb)
                     return
                 end
                 fi = fi % #frames + 1
-                pcall(vim.cmd, "redraw")
+                pcall(vim.cmd.redraw)
             end)
         )
     end
@@ -2630,14 +2616,16 @@ function M.update_all()
             end,
         })
 
-        timer:start(
-            0,
-            90,
-            vim.schedule_wrap(function()
-                fi = fi % #frames + 1
-                draw()
-            end)
-        )
+        if timer then
+            timer:start(
+                0,
+                90,
+                vim.schedule_wrap(function()
+                    fi = fi % #frames + 1
+                    draw()
+                end)
+            )
+        end
         draw()
         pump()
     end
