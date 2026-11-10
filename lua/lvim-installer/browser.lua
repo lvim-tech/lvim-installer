@@ -194,6 +194,63 @@ end
 ---@type fun(rowname: string, verb: string): fun(s: string), fun(msg?: string, level?: integer)
 local row_spinner
 
+--- The short marks of a dev checkout's standing against its remote: `↓2` (commits there not here; `↓?` when
+--- not fetched yet), `↑3` (commits here not pushed), `●` (uncommitted changes). "" when level and clean, or
+--- before any check.
+---@param info table  lvim-pkg plugin info (`behind`, `ahead`, `dirty`)
+---@return string
+function M.local_marks(info)
+    local out = {}
+    if info.behind == "?" then
+        out[#out + 1] = "↓?"
+    elseif (tonumber(info.behind) or 0) > 0 then
+        out[#out + 1] = "↓" .. info.behind
+    end
+    if (tonumber(info.ahead) or 0) > 0 then
+        out[#out + 1] = "↑" .. info.ahead
+    end
+    if info.dirty then
+        out[#out + 1] = "●"
+    end
+    return table.concat(out, " ")
+end
+
+--- The same, in words, for the detail row.
+---@param info table
+---@return string
+function M.local_status(info)
+    if info.behind == nil and info.ahead == nil and info.dirty == nil then
+        return "local checkout (not checked)"
+    end
+    local out = {}
+    if info.behind == "?" then
+        out[#out + 1] = "behind origin (not fetched)"
+    elseif (tonumber(info.behind) or 0) > 0 then
+        out[#out + 1] = ("%d behind origin"):format(info.behind)
+    end
+    if (tonumber(info.ahead) or 0) > 0 then
+        out[#out + 1] = ("%d not pushed"):format(info.ahead)
+    end
+    if info.dirty then
+        out[#out + 1] = "uncommitted changes"
+    end
+    return #out > 0 and table.concat(out, ", ") or "level with origin"
+end
+
+--- `list` with its outdated items first, then the rest, each part keeping its own order (by name). Every tab
+--- lists what needs updating at the top of each section: an outdated item no longer hides among dozens of
+--- current ones, and it is what "Update all" / "Update outdated" acts on.
+---@param list table[]
+---@param is_outdated fun(item: table): boolean
+---@return table[]
+function M.outdated_first(list, is_outdated)
+    local first, rest = {}, {}
+    for _, item in ipairs(list) do
+        table.insert(is_outdated(item) and first or rest, item)
+    end
+    return vim.list_extend(first, rest)
+end
+
 --- Build the item list for a tab, each with its kind and installed status.
 ---@param tab table
 ---@return table[]
@@ -280,9 +337,11 @@ local function plugin_label(info, pin)
         parts[#parts + 1] = string.rep(" ", 9)
     end
     if info.dir then
-        -- a LOCAL dev clone (dir=): no git remote, so it is skipped by the update check — flag it so the
-        -- panel total (incl. these) vs the "Check for updates" count (git-managed only) is self-explanatory.
-        parts[#parts + 1] = "󰌹 local"
+        -- A LOCAL dev clone (dir=): the user's own repository, never updated from here. After a check it
+        -- carries how it stands against its remote: ↓ commits there not here, ↑ commits here not pushed,
+        -- ● uncommitted changes (see `M.local_marks`).
+        local marks = M.local_marks(info)
+        parts[#parts + 1] = "󰌹 local" .. (marks ~= "" and (" " .. marks) or "")
     end
     if info.dependency then
         parts[#parts + 1] = "dep"
@@ -290,7 +349,7 @@ local function plugin_label(info, pin)
     if pin then
         parts[#parts + 1] = "󰐃 pinned"
     end
-    if info.outdated then
+    if info.outdated and not info.dir then
         parts[#parts + 1] = "update"
     end
     return (table.concat(parts, "    "):gsub("%s+$", "")) -- drop the reserved column when the row has no tags
@@ -406,7 +465,11 @@ local function plugin_detail_fields(info, pin)
     if info.priority then
         f[#f + 1] = { "Priority", tostring(info.priority) }
     end
-    f[#f + 1] = { "Status", info.outdated and "outdated" or "up to date" }
+    if info.dir then
+        f[#f + 1] = { "Status", M.local_status(info) }
+    else
+        f[#f + 1] = { "Status", info.outdated and "outdated" or "up to date" }
+    end
     if info.triggers and #info.triggers > 0 then
         f[#f + 1] = { "Triggers", table.concat(info.triggers, ", ") }
     end
@@ -1240,6 +1303,11 @@ local function plugin_rows(tab)
             table.insert(item.loaded and loaded_items or lazy_items, item)
         end
     end
+    local function plugin_outdated(item)
+        return item.info and item.info.outdated == true
+    end
+    loaded_items = M.outdated_first(loaded_items, plugin_outdated)
+    lazy_items = M.outdated_first(lazy_items, plugin_outdated)
     -- Name column = longest name IN THE SECTION, so the second column (load time /
     -- update) sits exactly 5 past it — same rule across all tabs.
     local function section_w(list)
@@ -1620,6 +1688,7 @@ local function mason_rows(tab)
             table.insert(item.installed and installed or available, item)
         end
     end
+    installed = M.outdated_first(installed, mason_outdated)
     local function section(name, label, list)
         -- Name column = longest name IN THIS SECTION, so the second column sits
         -- exactly 5 past it (a long item in the other section never pushes it).
@@ -1861,6 +1930,7 @@ local function parser_rows(tab)
             table.insert(item.installed and installed or available, item)
         end
     end
+    installed = M.outdated_first(installed, outd)
     local function section(name, label, list)
         -- Name column = longest name IN THIS SECTION, so the second column sits
         -- exactly 5 past it (a long item in the other section never pushes it).

@@ -11,6 +11,7 @@
 ---@field prompt       table   Unified prompt appearance (title_icon, snooze_ms, width)
 ---@field progress     table   Progress channel appearance (name, icon, spinner, header_hl)
 ---@field update_concurrency integer  Plugins updated at once during "Update all"
+---@field check_on_open boolean  Check every tab for updates, in the background, on the panel's first open in a session
 ---@field bootstrap    LvimInstallerBootstrapConfig  The first-start install panel (close delay, build wait)
 ---@field ensure_installed string[]  Mason tools to install silently at setup (allowlist)
 ---@field browser     table   The Package Manager panel: `layout` = "area"|"float"|"bottom", `keys` = its row-action keys + the `g?` cheatsheet
@@ -120,6 +121,9 @@ return {
     -- How many plugins to update at once during "Update all" (vim.pack has no
     -- concurrency option, so updates run in sequential batches of this size).
     update_concurrency = 4,
+    -- On the panel's first open in a session, refresh the catalogues and run the update checks for every tab in
+    -- the background, so "Outdated" means something without pressing "Check for updates" first.
+    check_on_open = true,
     -- The FIRST-START install panel (the one the host loader drives through
     -- `lvim-installer.bootstrap.install`) — not the browser.
     bootstrap = {

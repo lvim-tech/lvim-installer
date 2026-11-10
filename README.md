@@ -219,6 +219,7 @@ require("lvim-installer").setup({
 
     -- How many plugins to update at once during "Update all" (sequential batches).
     update_concurrency = 4,
+    check_on_open = true,
 
     -- The first-start install panel (not the browser).
     bootstrap = {
@@ -260,6 +261,7 @@ require("lvim-installer").setup({
 | `action_icons` | the browser's inline action-row icons, keyed by action label |
 | `field_icons` | the browser's inline detail-row icons, keyed by field name |
 | `update_concurrency` | batch size for "Update all" of plugins |
+| `check_on_open` | on the panel's first open in a session, refresh the catalogues and run every tab's update check in the background, so "Outdated" is known without pressing "Check for updates" |
 | `bootstrap` | the first-start install panel: how long the finished panel lingers (`close_delay`), how long the build phase waits for a build hook to report back (`build_timeout`), and the line shown while a native build runs (`build_hint`). The build phase is asynchronous — the panel holds each row at "building …" until the hook answers, and never closes over a running build |
 | `progress` | the install progress panel (name, icon, spinner, done timeout) |
 | `popup_global` | the manager / prompt window: geometry, icons, labels, key bindings |

@@ -164,10 +164,15 @@ end
 --- one of mason | ts | plugin | all. Plugins have no upstream catalogue — their phase is
 --- the git outdated check; Mason's "outdated" is recomputed from the refreshed catalogue
 --- on re-render, so it needs no separate check.
+---
+--- `opts.quiet` runs the same steps with no progress panel: the check made on the panel's first open, whose
+--- results show up in the panel's own counters as each step lands.
 ---@param which? string
+---@param opts? { quiet?: boolean }
 ---@return nil
-function M.update_registry(which)
+function M.update_registry(which, opts)
     which = which or "all"
+    local quiet = opts and opts.quiet
     local do_mason = which == "mason" or which == "all"
     local do_ts = which == "ts" or which == "all"
     local do_plugin = which == "plugin" or which == "all"
@@ -189,7 +194,7 @@ function M.update_registry(which)
         return
     end
 
-    local session = progress.start(phases)
+    local session = quiet and { update = function() end, done = function() end } or progress.start(phases)
     local results, steps = {}, {}
 
     local function run(i)
@@ -262,6 +267,27 @@ end
 ---@return nil
 function M.open(tab, layout)
     browser.open(tab, layout)
+    M.check_on_open()
+end
+
+--- Whether this session has already run the first-open check.
+local checked_on_open = false
+
+--- On the panel's FIRST open in a session, check every tab in the background: refresh the Mason and parser
+--- catalogues (the LSP / DAP / linter / formatter "outdated" marks are computed from them), and run the plugin
+--- and parser update checks. Without it the panel opened with "Outdated 0" everywhere, which only meant "not
+--- checked yet", and stayed so until "Check for updates" was pressed. Later opens reuse what was found;
+--- "Check for updates" still checks again on demand. `config.check_on_open = false` turns it off.
+---@return boolean started
+function M.check_on_open()
+    if checked_on_open or config.check_on_open == false then
+        return false
+    end
+    checked_on_open = true
+    vim.schedule(function()
+        M.update_registry("all", { quiet = true })
+    end)
+    return true
 end
 
 return M
