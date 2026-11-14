@@ -60,6 +60,11 @@ function M.offer(ft)
     if not ft or ft == "" then
         return
     end
+    -- A Neovim embedded as the lvim-fuzzy preview (g:lvim_fuzzy_preview) only SHOWS files while you move
+    -- through the finder: it never asks to install anything — the real editor offers that when you open one.
+    if vim.g.lvim_fuzzy_preview then
+        return
+    end
     if showing == ft then
         return -- its prompt is already open; opening a second would double-run the install
     end
