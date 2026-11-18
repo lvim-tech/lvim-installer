@@ -202,15 +202,15 @@ local row_spinner
 function M.local_marks(info)
     local out = {}
     if info.behind == "?" then
-        out[#out + 1] = "↓?"
+        out[#out + 1] = "\u{f0045}?"
     elseif (tonumber(info.behind) or 0) > 0 then
-        out[#out + 1] = "↓" .. info.behind
+        out[#out + 1] = "\u{f0045}" .. info.behind
     end
     if (tonumber(info.ahead) or 0) > 0 then
-        out[#out + 1] = "↑" .. info.ahead
+        out[#out + 1] = "\u{f005d}" .. info.ahead
     end
     if info.dirty then
-        out[#out + 1] = "●"
+        out[#out + 1] = "\u{f09de}"
     end
     return table.concat(out, " ")
 end
@@ -2332,7 +2332,7 @@ row_spinner = function(rowname, verb)
     if state.active_ops[rowname] then
         return nil, nil
     end
-    local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+    local frames = { "\u{f0a9e}", "\u{f0a9f}", "\u{f0aa0}", "\u{f0aa1}", "\u{f0aa2}", "\u{f0aa3}", "\u{f0aa4}", "\u{f0aa5}" }
     local fi, status_txt = 1, verb
     local timer = vim.uv.new_timer()
     local done = false
@@ -2548,7 +2548,7 @@ function M.update_all()
         state.updating_all = true
         local ti = plugin_tab_index()
         local total = #targets
-        local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+        local frames = { "\u{f0a9e}", "\u{f0a9f}", "\u{f0aa0}", "\u{f0aa1}", "\u{f0aa2}", "\u{f0aa3}", "\u{f0aa4}", "\u{f0aa5}" }
         local fi, k, done, first = 1, 0, false, true
         local pos = 0
         local timer = vim.uv.new_timer()

@@ -234,7 +234,7 @@ require("lvim-installer").setup({
         name = "Installer",
         icon = "󰏗",
         header_hl = "LvimNotifyHeaderInfo",
-        spinner = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
+        spinner = { "󰪞", "󰪟", "󰪠", "󰪡", "󰪢", "󰪣", "󰪤", "󰪥" },
         icon_ok = "󰄬",
         icon_error = "󰅖",
         done_ttl = 4000,

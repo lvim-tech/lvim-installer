@@ -36,7 +36,7 @@ local function trace(fmt, ...)
     end
 end
 
-local FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+local FRAMES = { "\u{f0a9e}", "\u{f0a9f}", "\u{f0aa0}", "\u{f0aa1}", "\u{f0aa2}", "\u{f0aa3}", "\u{f0aa4}", "\u{f0aa5}" }
 
 --- Names of git plugins not yet cloned into the pack opt dir.
 ---@param specs table[]  vim.pack specs ({ src, name, version })
@@ -92,21 +92,21 @@ local function notify_mod()
 end
 
 --- Build the panel lines + extmarks (shared layout). marks = { row, s, e, hl_group }.
--- One status row: "  <icon> <name>     <text>". Icons (all 3 bytes): ✓ done, ✗ error,
--- spinner active/building, ○ pending. Appends to `lines`/`marks` (marks use 0-based rows).
+-- One status row: "  <icon> <name>     <text>". Icons (all Nerd glyphs, 4 bytes each): 󰸞 done, 󱎘 error,
+-- spinner (circle slices) active/building, 󰝦 pending. Appends to `lines`/`marks` (marks use 0-based rows).
 local function status_row(lines, marks, spin, name, st, text)
-    local icon = (st == "done" and "\xe2\x9c\x93")
-        or (st == "error" and "\xe2\x9c\x97")
+    local icon = (st == "done" and "\u{f0e1e}")
+        or (st == "error" and "\u{f1398}")
         or ((st == "building" or st == "active") and spin)
-        or "\xe2\x97\x8b"
+        or "\u{f0766}"
     local row = #lines
     lines[#lines + 1] = "  " .. icon .. " " .. name .. (text and ("     " .. text) or "")
     local icon_hl = (st == "done" and "String")
         or (st == "error" and "DiagnosticError")
         or ((st == "building" or st == "active") and "Constant")
         or "Comment"
-    marks[#marks + 1] = { row, 2, 5, icon_hl }
-    marks[#marks + 1] = { row, 6, 6 + #name, "LvimBootstrapName" }
+    marks[#marks + 1] = { row, 2, 2 + #icon, icon_hl }
+    marks[#marks + 1] = { row, 3 + #icon, 3 + #icon + #name, "LvimBootstrapName" }
 end
 
 --- Render the panel. During the clone phase `build` is nil (sliding window of cloning
@@ -127,15 +127,15 @@ local function build_lines(missing, status, done_count, total, fi, width, build,
     -- vanished on its timer. The phase being over is its own fact, separate from everything having
     -- succeeded — so it ends either with a ✓ or with what actually happened.
     local short = over and not done
-    local head = (short and string.format("  \xe2\x9c\x97 Installed %d of %d plugins", done_count, total))
-        or (done and string.format("  \xe2\x9c\x93 Installed %d plugins", total))
+    local head = (short and string.format("  \u{f1398} Installed %d of %d plugins", done_count, total))
+        or (done and string.format("  \u{f0e1e} Installed %d plugins", total))
         or string.format("  %s Installing plugins   %d / %d", spin, done_count, total)
     -- No leading blank line: the notify channel already renders its own header row above
     -- these lines, so a blank here would push everything one row down.
     local lines = { head, "  " .. bar }
     local marks = {}
-    marks[#marks + 1] = { 0, 2, 5, (short and "DiagnosticError") or (done and "DiagnosticHint") or "String" }
-    marks[#marks + 1] = { 0, 5, #lines[1], (done and "LvimBootstrapDone") or "LvimBootstrapHead" }
+    marks[#marks + 1] = { 0, 2, 6, (short and "DiagnosticError") or (done and "DiagnosticHint") or "String" }
+    marks[#marks + 1] = { 0, 6, #lines[1], (done and "LvimBootstrapDone") or "LvimBootstrapHead" }
     local fb = 2 + #("\xe2\x94\x81"):rep(filled)
     marks[#marks + 1] = { 1, 2, fb, "Special" }
     marks[#marks + 1] = { 1, fb, #lines[2], "Comment" }
@@ -161,13 +161,13 @@ local function build_lines(missing, status, done_count, total, fi, width, build,
             end
         end
         local bfail = bdone and bok < build.total
-        local bhead = (bfail and string.format("  \xe2\x9c\x97 Built %d of %d native libraries", bok, build.total))
-            or (bdone and string.format("  \xe2\x9c\x93 Built %d native libraries", build.total))
+        local bhead = (bfail and string.format("  \u{f1398} Built %d of %d native libraries", bok, build.total))
+            or (bdone and string.format("  \u{f0e1e} Built %d native libraries", build.total))
             or string.format("  %s Building native libraries   %d / %d", spin, build.done, build.total)
         local hrow = #lines
         lines[#lines + 1] = bhead
-        marks[#marks + 1] = { hrow, 2, 5, (bfail and "DiagnosticError") or (bdone and "DiagnosticHint") or "String" }
-        marks[#marks + 1] = { hrow, 5, #bhead, (bdone and not bfail) and "LvimBootstrapDone" or "LvimBootstrapHead" }
+        marks[#marks + 1] = { hrow, 2, 6, (bfail and "DiagnosticError") or (bdone and "DiagnosticHint") or "String" }
+        marks[#marks + 1] = { hrow, 6, #bhead, (bdone and not bfail) and "LvimBootstrapDone" or "LvimBootstrapHead" }
         for _, n in ipairs(build.names) do
             local st = build.status[n]
             local text = (build.text and build.text[n])
