@@ -173,7 +173,7 @@ return {
             expand_open = " ",
             multi_selected = "󰄬",
             multi_empty = "󰍴",
-            current = "➤",
+            current = "󰅂",
         },
 
         labels = {

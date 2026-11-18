@@ -480,7 +480,7 @@ local function plugin_detail_fields(info, pin)
 end
 
 --- Reinstall flow: chained dropdowns over fresh refs. Stores the full convention.
---- The current choice is pre-selected (marked by the ➤ cursor, no extra text), and
+--- The current choice is pre-selected (marked by the 󰅂 cursor, no extra text), and
 --- each step (except the first) maps Backspace to go back one level (footer hint).
 ---@param name string
 local function reinstall_menu(name)
